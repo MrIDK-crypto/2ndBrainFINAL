@@ -1,0 +1,50 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv
+venv312
+venv_new
+.venv
+*.egg-info
+.eggs
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+
+# Data files (will be in Cloud SQL / Pinecone)
+*.db
+*.sqlite
+data/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose*.yml
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+docs/
