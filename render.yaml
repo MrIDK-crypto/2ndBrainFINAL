@@ -1,0 +1,89 @@
+# Render Blueprint - Second Brain Deployment
+# This file defines all services for one-click deployment
+
+services:
+  # Backend API (Flask)
+  - type: web
+    name: secondbrain-backend
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && gunicorn app_v2:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: DATABASE_TYPE
+        value: postgresql
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: secondbrain-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: secondbrain-db
+          property: port
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: secondbrain-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: secondbrain-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: secondbrain-db
+          property: password
+      - key: DATABASE_URL
+        fromDatabase:
+          name: secondbrain-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: AZURE_OPENAI_ENDPOINT
+        sync: false
+      - key: AZURE_OPENAI_API_KEY
+        sync: false
+      - key: AZURE_API_VERSION
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        sync: false
+      - key: BOX_CLIENT_ID
+        sync: false
+      - key: BOX_CLIENT_SECRET
+        sync: false
+      - key: SLACK_CLIENT_ID
+        sync: false
+      - key: SLACK_CLIENT_SECRET
+        sync: false
+      - key: LLAMA_CLOUD_API_KEY
+        sync: false
+
+  # Frontend (Next.js)
+  - type: web
+    name: secondbrain-frontend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          name: secondbrain-backend
+          type: web
+          property: url
+
+# PostgreSQL Database
+databases:
+  - name: secondbrain-db
+    plan: free
+    region: oregon
+    databaseName: secondbrain
+    user: secondbrain
