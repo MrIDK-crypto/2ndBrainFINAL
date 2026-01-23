@@ -75,10 +75,7 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: NEXT_PUBLIC_API_URL
-        fromService:
-          name: secondbrain-backend
-          type: web
-          property: url
+        sync: false  # You'll set this manually after backend deploys
 
 # PostgreSQL Database
 databases:
