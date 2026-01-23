@@ -1,5 +1,4 @@
 # Render Blueprint - Second Brain Deployment
-# This file defines all services for one-click deployment
 
 services:
   # Backend API (Flask)
@@ -8,12 +7,13 @@ services:
     runtime: python
     region: oregon
     plan: free
-    buildCommand: cd backend && pip install -r requirements.txt
-    startCommand: cd backend && gunicorn app_v2:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app_v2:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.0
+        value: 3.11.4
       - key: DATABASE_TYPE
         value: postgresql
       - key: POSTGRES_HOST
@@ -69,13 +69,14 @@ services:
     runtime: node
     region: oregon
     plan: free
-    buildCommand: cd frontend && npm install && npm run build
-    startCommand: cd frontend && npm start
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
     envVars:
       - key: NODE_VERSION
         value: 20
       - key: NEXT_PUBLIC_API_URL
-        sync: false  # You'll set this manually after backend deploys
+        sync: false
 
 # PostgreSQL Database
 databases:
