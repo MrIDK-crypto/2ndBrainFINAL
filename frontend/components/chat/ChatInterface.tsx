@@ -56,7 +56,7 @@ const WelcomeCard = ({ icon, title, description, onClick }: any) => (
 )
 
 export default function ChatInterface() {
-  const { user, token, isLoading: authLoading, logout } = useAuth()
+  const { user, token, tenant, isLoading: authLoading, logout } = useAuth()
   const [activeItem, setActiveItem] = useState('ChatBot')
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -71,7 +71,7 @@ export default function ChatInterface() {
   // Auth headers for API calls
   const getAuthHeaders = () => ({
     'Authorization': token ? `Bearer ${token}` : '',
-    'X-Tenant': user?.tenant || '',
+    'X-Tenant': tenant?.id || '',
     'Content-Type': 'application/json'
   })
 
@@ -409,7 +409,7 @@ export default function ChatInterface() {
             {/* User info and logout */}
             <div className="flex items-center gap-3">
               <span className="text-neutral-600 font-sans text-sm">
-                {user?.tenant?.toUpperCase()}
+                {tenant?.name?.toUpperCase()}
               </span>
               <button
                 onClick={logout}
