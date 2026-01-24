@@ -260,7 +260,7 @@ export default function ChatInterface() {
 
       // Replace [Source X] with placeholder markers that we'll render as links
       // Use a special marker format: [[SOURCE:name:doc_id]]
-      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+)\]/g, (match, num) => {
+      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+)\]/g, (match: string, num: string) => {
         const key = `Source ${num}`
         const source = sourceMapData[key]
         if (source) {
@@ -269,7 +269,7 @@ export default function ChatInterface() {
         return match
       })
       // Also handle [Source X, Source Y] format
-      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+), Source (\d+)\]/g, (match, num1, num2) => {
+      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+), Source (\d+)\]/g, (match: string, num1: string, num2: string) => {
         const source1 = sourceMapData[`Source ${num1}`]
         const source2 = sourceMapData[`Source ${num2}`]
         if (source1 && source2) {
