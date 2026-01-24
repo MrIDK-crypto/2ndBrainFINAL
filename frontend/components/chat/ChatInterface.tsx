@@ -436,7 +436,7 @@ export default function ChatInterface() {
                     <Image src="/Maya.png" alt="Rishit" width={80} height={80} />
                   </div>
                   <h2 className="text-neutral-800 font-work text-2xl font-semibold mb-2">
-                    Welcome, {user?.name?.split(' ')[0] || 'User'}
+                    Welcome, {user?.full_name?.split(' ')[0] || 'User'}
                   </h2>
                   <p className="text-gray-600 font-sans text-sm">
                     Start by scripting a task, and let the chat take over.

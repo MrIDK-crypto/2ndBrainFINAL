@@ -419,7 +419,7 @@ const SyncProgressModal = ({
     // Early estimate for starting
     if (progress.status === 'starting' || progress.progress < 3) {
       // Better initial estimate based on typical full sync
-      const docsFound = progress.documents_found || 10
+      const docsFound = progress.documentsFound || 10
       // Estimate: syncing 40% fast + parsing 30% medium + embedding 25% slow
       const estimatedTotal = (40 * 0.5) + (30 * 1.5) + (25 * 6.0 * (docsFound / 10))
       setEstimatedSeconds(Math.max(estimatedTotal, 60))
@@ -437,18 +437,18 @@ const SyncProgressModal = ({
       const syncRemaining = 40 - currentProgress
       const parseRemaining = 30
       const embedRemaining = 25
-      const docsFound = progress.documents_found || 10
+      const docsFound = progress.documentsFound || 10
       estimatedRemaining = (syncRemaining * 0.5) + (parseRemaining * 1.5) + (embedRemaining * 6.0 * Math.max(1, docsFound / 10))
     } else if (currentProgress < 70) {
       // In parsing phase
       const parseRemaining = 70 - currentProgress
       const embedRemaining = 25
-      const docsFound = progress.documents_found || 10
+      const docsFound = progress.documentsFound || 10
       estimatedRemaining = (parseRemaining * 1.5) + (embedRemaining * 6.0 * Math.max(1, docsFound / 10))
     } else if (currentProgress < 95) {
       // In embedding phase (slowest)
       const embedRemaining = 95 - currentProgress
-      const docsFound = progress.documents_found || 10
+      const docsFound = progress.documentsFound || 10
       // GPT extraction is about 3-5 seconds per doc, embedding is 1-2 seconds per doc
       estimatedRemaining = embedRemaining * 6.0 * Math.max(1, docsFound / 10)
     } else {

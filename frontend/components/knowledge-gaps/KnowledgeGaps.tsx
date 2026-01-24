@@ -159,7 +159,7 @@ export default function KnowledgeGaps() {
             const formData = new FormData()
             formData.append('audio', audioBlob, 'recording.webm')
             const response = await axios.post(`${API_BASE}/knowledge/transcribe`, formData, {
-              headers: { 'Content-Type': 'multipart/form-data', ...authHeaders }
+              headers: { ...authHeaders, 'Content-Type': 'multipart/form-data' }
             })
             if (response.data.transcript) {
               setAnswer(prev => prev ? `${prev} ${response.data.transcript}` : response.data.transcript)
