@@ -111,13 +111,17 @@ class SlackConnector(BaseConnector):
             # Get channels to sync
             channels = await self._get_channels()
 
+            print(f"[Slack] Starting sync for {len(channels)} channels")
+
             # Calculate oldest timestamp
             oldest = None
             if since:
                 oldest = since.timestamp()
+                print(f"[Slack] Syncing since: {since}")
             elif self.config.settings.get("oldest_days"):
                 days = self.config.settings["oldest_days"]
                 oldest = (datetime.now().timestamp()) - (days * 24 * 60 * 60)
+                print(f"[Slack] Syncing last {days} days")
 
             for channel in channels:
                 channel_docs = await self._sync_channel(channel, oldest)
@@ -131,7 +135,12 @@ class SlackConnector(BaseConnector):
             self.config.last_sync = datetime.now()
             self.status = ConnectorStatus.CONNECTED
 
+            print(f"[Slack] Sync complete: {len(documents)} total documents")
+
         except Exception as e:
+            print(f"[Slack] Sync failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self._set_error(f"Sync failed: {str(e)}")
 
         return documents
@@ -156,7 +165,10 @@ class SlackConnector(BaseConnector):
                 exclude_archived=True
             )
 
+            print(f"[Slack] Found {len(response.get('channels', []))} total channels")
+
             for channel in response.get("channels", []):
+                print(f"[Slack] Channel: {channel['name']} (is_member={channel.get('is_member')})")
                 if not configured_channels or channel["id"] in configured_channels:
                     if channel.get("is_member"):
                         channels.append({
@@ -164,6 +176,9 @@ class SlackConnector(BaseConnector):
                             "name": channel["name"],
                             "type": "channel"
                         })
+                        print(f"[Slack] ✓ Added channel: {channel['name']}")
+
+            print(f"[Slack] Total channels to sync: {len(channels)}")
 
             # Get DMs if enabled
             if self.config.settings.get("include_dms"):
@@ -176,6 +191,7 @@ class SlackConnector(BaseConnector):
                     })
 
         except SlackApiError as e:
+            print(f"[Slack] Error getting channels: {e.response['error']}")
             self._set_error(f"Failed to get channels: {e.response['error']}")
 
         return channels
@@ -184,6 +200,8 @@ class SlackConnector(BaseConnector):
         """Sync messages from a single channel"""
         documents = []
         max_messages = self.config.settings.get("max_messages_per_channel", 1000)
+
+        print(f"[Slack] Syncing channel: {channel['name']}")
 
         try:
             cursor = None
@@ -202,11 +220,16 @@ class SlackConnector(BaseConnector):
                     kwargs["cursor"] = cursor
 
                 response = self.client.conversations_history(**kwargs)
+                messages = response.get("messages", [])
 
-                for message in response.get("messages", []):
+                print(f"[Slack] Fetched {len(messages)} messages from {channel['name']}")
+
+                for message in messages:
                     doc = await self._message_to_document(message, channel)
                     if doc:
                         documents.append(doc)
+                    else:
+                        print(f"[Slack] Skipped message (subtype={message.get('subtype')})")
 
                     # Get thread replies if enabled
                     if (self.config.settings.get("include_threads", True) and
@@ -220,8 +243,10 @@ class SlackConnector(BaseConnector):
                 else:
                     break
 
+            print(f"[Slack] Channel {channel['name']}: {len(documents)} documents created")
+
         except SlackApiError as e:
-            print(f"Error syncing channel {channel['name']}: {e.response['error']}")
+            print(f"[Slack] Error syncing channel {channel['name']}: {e.response['error']}")
 
         return documents
 
