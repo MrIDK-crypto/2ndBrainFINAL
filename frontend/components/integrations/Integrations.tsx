@@ -5,7 +5,9 @@ import Sidebar from '../shared/Sidebar'
 import Image from 'next/image'
 import axios from 'axios'
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003') + '/api'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL
+  ? `${process.env.NEXT_PUBLIC_API_URL}/api`
+  : 'http://localhost:5003/api'
 
 interface Integration {
   id: string
@@ -1589,7 +1591,7 @@ const integrations: Integration[] = [
     description: 'Sync messages from all your Slack channels into your knowledge base.',
     category: 'Conversations',
     connected: false,
-    isOAuth: false  // Changed to false - use token input instead
+    isOAuth: true  // Use OAuth flow like Gmail and Box
   },
   {
     id: 'gmail',
@@ -2343,17 +2345,7 @@ export default function Integrations() {
   const toggleConnect = async (id: string) => {
     const integration = integrationsState.find(i => i.id === id)
 
-    // Handle Slack specially - use token modal
-    if (id === 'slack') {
-      if (integration?.connected) {
-        await disconnectIntegration(id)
-      } else {
-        setShowSlackTokenModal(true)
-      }
-      return
-    }
-
-    // Handle OAuth integrations (Gmail, etc.)
+    // Handle OAuth integrations (Slack, Gmail, Box, etc.)
     if (integration?.isOAuth) {
       if (integration.connected) {
         await disconnectIntegration(id)
