@@ -1079,9 +1079,9 @@ def _run_connector_sync(
                 from connectors.gmail_connector import GmailConnector
                 ConnectorClass = GmailConnector
             elif connector_type == "slack":
-                # Use enhanced SlackKnowledgeConnector for Knowledge Cards
-                from connectors.slack_knowledge_connector import SlackKnowledgeConnector
-                ConnectorClass = SlackKnowledgeConnector
+                # Use basic SlackConnector (no filtering, captures all messages)
+                from connectors.slack_connector import SlackConnector
+                ConnectorClass = SlackConnector
             elif connector_type == "box":
                 from connectors.box_connector import BoxConnector
                 ConnectorClass = BoxConnector
