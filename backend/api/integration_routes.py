@@ -1571,11 +1571,17 @@ def _run_connector_sync(
                     Document.connector_id == connector.id
                 ).count()
 
-                # Force full sync if no documents exist yet (first sync)
-                if existing_doc_count == 0:
+                # Force full sync if no EMBEDDED documents exist yet (first successful sync)
+                embedded_doc_count = db.query(Document).filter(
+                    Document.tenant_id == tenant_id,
+                    Document.connector_id == connector.id,
+                    Document.embedded_at.isnot(None)
+                ).count()
+
+                if embedded_doc_count == 0:
                     full_sync = True
                     since = None
-                    print(f"[Sync] First sync detected for {connector_type}, doing full sync")
+                    print(f"[Sync] First sync detected for {connector_type} (no embedded docs), doing full sync")
 
                     # Clear any deleted document records on first sync (fresh start)
                     deleted_count = db.query(DeletedDocument).filter(
