@@ -245,6 +245,14 @@ export default function Documents() {
   const [viewingDocument, setViewingDocument] = useState<FullDocument | null>(null)
   const [loadingDocument, setLoadingDocument] = useState(false)
   const [classifying, setClassifying] = useState(false)
+
+  // Add documents modal state
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [uploadMode, setUploadMode] = useState<'file' | 'text'>('file')
+  const [uploading, setUploading] = useState(false)
+  const [textTitle, setTextTitle] = useState('')
+  const [textContent, setTextContent] = useState('')
+  const [textClassification, setTextClassification] = useState('unknown')
   const authHeaders = useAuthHeaders()
   const { token } = useAuth()
   const router = useRouter()
@@ -547,6 +555,85 @@ export default function Documents() {
     }
   }
 
+  // Handle file upload
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      Array.from(files).forEach(file => {
+        formData.append('files', file)
+      })
+
+      const response = await axios.post(
+        `${API_BASE}/documents/upload`,
+        formData,
+        {
+          headers: {
+            ...authHeaders,
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      )
+
+      if (response.data.success) {
+        setShowAddModal(false)
+        await loadDocuments()
+        alert(`Successfully uploaded ${response.data.count} document(s)!`)
+      } else {
+        throw new Error(response.data.error || 'Upload failed')
+      }
+    } catch (error: any) {
+      console.error('Error uploading files:', error)
+      alert(`Failed to upload files: ${error.response?.data?.error || error.message}`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // Handle text paste
+  const handleTextPaste = async () => {
+    if (!textTitle.trim() || !textContent.trim()) {
+      alert('Please provide both title and content')
+      return
+    }
+
+    if (textContent.length < 50) {
+      alert('Content must be at least 50 characters')
+      return
+    }
+
+    setUploading(true)
+    try {
+      const response = await axios.post(
+        `${API_BASE}/documents/upload`,
+        {
+          title: textTitle,
+          content: textContent,
+          classification: textClassification
+        },
+        { headers: authHeaders }
+      )
+
+      if (response.data.success) {
+        setShowAddModal(false)
+        setTextTitle('')
+        setTextContent('')
+        setTextClassification('unknown')
+        await loadDocuments()
+        alert('Document added successfully!')
+      } else {
+        throw new Error(response.data.error || 'Upload failed')
+      }
+    } catch (error: any) {
+      console.error('Error adding document:', error)
+      alert(`Failed to add document: ${error.response?.data?.error || error.message}`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const saveAndAnalyzeGaps = async () => {
     setSaving(true)
     try {
@@ -657,6 +744,7 @@ export default function Documents() {
             </button>
 
             <button
+              onClick={() => setShowAddModal(true)}
               style={{
                 display: 'flex',
                 width: '137px',
@@ -1126,6 +1214,253 @@ export default function Documents() {
           </div>
         </div>
       </div>
+
+      {/* Add Documents Modal */}
+      {showAddModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}
+          onClick={() => setShowAddModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: '#FFF3E4',
+              borderRadius: '16px',
+              padding: '32px',
+              maxWidth: '600px',
+              width: '90%',
+              maxHeight: '90vh',
+              overflow: 'auto'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h2 style={{
+              fontFamily: '"Work Sans", sans-serif',
+              fontSize: '20px',
+              fontWeight: 600,
+              marginBottom: '8px'
+            }}>
+              Add Documents
+            </h2>
+
+            <p style={{
+              fontFamily: 'Inter, sans-serif',
+              fontSize: '14px',
+              color: '#71717A',
+              marginBottom: '20px'
+            }}>
+              Upload files or paste text to add to your knowledge base
+            </p>
+
+            {/* Mode Toggle */}
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              marginBottom: '20px',
+              borderBottom: '1px solid #D4D4D8',
+              paddingBottom: '8px'
+            }}>
+              <button
+                onClick={() => setUploadMode('file')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: uploadMode === 'file' ? '#081028' : 'transparent',
+                  color: uploadMode === 'file' ? '#FFE2BF' : '#081028',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  fontFamily: '"Work Sans", sans-serif'
+                }}
+              >
+                Upload Files
+              </button>
+              <button
+                onClick={() => setUploadMode('text')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: uploadMode === 'text' ? '#081028' : 'transparent',
+                  color: uploadMode === 'text' ? '#FFE2BF' : '#081028',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  fontFamily: '"Work Sans", sans-serif'
+                }}
+              >
+                Paste Text
+              </button>
+            </div>
+
+            {/* File Upload Mode */}
+            {uploadMode === 'file' && (
+              <div>
+                <div style={{
+                  border: '2px dashed #D4D4D8',
+                  borderRadius: '8px',
+                  padding: '40px',
+                  textAlign: 'center',
+                  marginBottom: '16px'
+                }}>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.docx,.doc,.txt"
+                    onChange={(e) => handleFileUpload(e.target.files)}
+                    style={{ display: 'none' }}
+                    id="file-upload"
+                  />
+                  <label
+                    htmlFor="file-upload"
+                    style={{
+                      cursor: 'pointer',
+                      color: '#081028',
+                      fontFamily: '"Work Sans", sans-serif',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <div style={{ marginBottom: '8px', fontSize: '24px' }}>📄</div>
+                    <div style={{ fontWeight: 500 }}>Click to upload files</div>
+                    <div style={{ fontSize: '12px', color: '#71717A', marginTop: '4px' }}>
+                      PDF, DOCX, DOC, TXT (max 50MB each)
+                    </div>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* Text Paste Mode */}
+            {uploadMode === 'text' && (
+              <div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    display: 'block',
+                    marginBottom: '8px'
+                  }}>
+                    Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={textTitle}
+                    onChange={e => setTextTitle(e.target.value)}
+                    placeholder="Document title"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid #D4D4D8',
+                      fontSize: '14px',
+                      fontFamily: 'Inter, sans-serif'
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    display: 'block',
+                    marginBottom: '8px'
+                  }}>
+                    Content * (minimum 50 characters)
+                  </label>
+                  <textarea
+                    value={textContent}
+                    onChange={e => setTextContent(e.target.value)}
+                    placeholder="Paste or type your content here..."
+                    rows={10}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid #D4D4D8',
+                      fontSize: '14px',
+                      fontFamily: 'Inter, sans-serif',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    display: 'block',
+                    marginBottom: '8px'
+                  }}>
+                    Classification
+                  </label>
+                  <select
+                    value={textClassification}
+                    onChange={e => setTextClassification(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid #D4D4D8',
+                      fontSize: '14px',
+                      fontFamily: 'Inter, sans-serif'
+                    }}
+                  >
+                    <option value="unknown">Unknown</option>
+                    <option value="work">Work</option>
+                    <option value="personal">Personal</option>
+                    <option value="spam">Spam</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleTextPaste}
+                  disabled={uploading || !textTitle.trim() || !textContent.trim()}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: uploading || !textTitle.trim() || !textContent.trim() ? '#9ca3af' : '#081028',
+                    color: '#FFE2BF',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    cursor: uploading || !textTitle.trim() || !textContent.trim() ? 'not-allowed' : 'pointer',
+                    fontFamily: '"Work Sans", sans-serif'
+                  }}
+                >
+                  {uploading ? 'Adding Document...' : 'Add Document'}
+                </button>
+              </div>
+            )}
+
+            {uploading && uploadMode === 'file' && (
+              <div style={{
+                textAlign: 'center',
+                padding: '20px',
+                color: '#081028',
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '14px'
+              }}>
+                Uploading files...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Document Viewer Modal */}
       {viewingDocument && (

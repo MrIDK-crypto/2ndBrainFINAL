@@ -243,6 +243,65 @@ class DocumentParser:
             }
         }
 
+    def parse_pdf_bytes(self, content: bytes) -> str:
+        """
+        Extract text from PDF bytes (for file uploads)
+
+        Args:
+            content: PDF file content as bytes
+
+        Returns:
+            Extracted text string
+        """
+        import io
+        text_parts = []
+
+        try:
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+            num_pages = len(pdf_reader.pages)
+
+            for page_num in range(num_pages):
+                page = pdf_reader.pages[page_num]
+                text = page.extract_text()
+                if text.strip():
+                    text_parts.append(text.strip())
+
+            return '\n\n'.join(text_parts)
+        except Exception as e:
+            raise Exception(f"Failed to parse PDF: {str(e)}")
+
+    def parse_word_bytes(self, content: bytes) -> str:
+        """
+        Extract text from Word document bytes (for file uploads)
+
+        Args:
+            content: DOCX file content as bytes
+
+        Returns:
+            Extracted text string
+        """
+        import io
+        text_parts = []
+
+        try:
+            doc = Document(io.BytesIO(content))
+
+            # Extract paragraphs
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text_parts.append(para.text.strip())
+
+            # Extract tables
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = ' | '.join([cell.text.strip() for cell in row.cells if cell.text.strip()])
+                    if row_text:
+                        text_parts.append(row_text)
+
+            return '\n\n'.join(text_parts)
+        except Exception as e:
+            raise Exception(f"Failed to parse Word document: {str(e)}")
+
 
 if __name__ == "__main__":
     # Test the parser

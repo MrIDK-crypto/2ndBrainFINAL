@@ -2174,7 +2174,7 @@ const integrations: Integration[] = [
   {
     id: 'onedrive',
     name: 'Microsoft 365',
-    logo: '/onedrive.png',
+    logo: '/outlook.png',
     description: 'Connect OneDrive to import PowerPoint, Excel, Word, and PDF files into your knowledge base.',
     category: 'Documents & Recordings',
     connected: false,
@@ -2207,7 +2207,7 @@ const integrations: Integration[] = [
   {
     id: 'webscraper',
     name: 'Website Scraper',
-    logo: '/webscraper.png',
+    logo: '/docs.png',
     description: 'Crawl lab websites and extract protocols, documentation, and resources.',
     category: 'Research',
     connected: false

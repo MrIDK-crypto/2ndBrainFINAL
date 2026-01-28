@@ -199,6 +199,212 @@ def get_document(document_id: str):
 
 
 # ============================================================================
+# MANUAL DOCUMENT UPLOAD
+# ============================================================================
+
+@document_bp.route('/upload', methods=['POST'])
+@require_auth
+def upload_documents():
+    """
+    Manually upload documents (files or pasted text).
+
+    Request body (multipart/form-data for files):
+    - files: File uploads (PDF, DOCX, TXT, etc.)
+
+    Request body (JSON for text):
+    {
+        "title": "Document Title",
+        "content": "Document text content...",
+        "classification": "work" | "personal" | "spam" | "unknown"  // Optional
+    }
+
+    Response:
+    {
+        "success": true,
+        "documents": [
+            {
+                "id": "...",
+                "title": "...",
+                "status": "pending" | "classified"
+            }
+        ]
+    }
+    """
+    try:
+        db = get_db()
+        documents_created = []
+
+        try:
+            # Check if this is a file upload or text paste
+            if request.content_type and 'multipart/form-data' in request.content_type:
+                # Handle file uploads
+                files = request.files.getlist('files')
+                if not files:
+                    return jsonify({
+                        "success": False,
+                        "error": "No files provided"
+                    }), 400
+
+                # Import parsers
+                from parsers.document_parser import DocumentParser
+                parser = DocumentParser()
+
+                for file in files:
+                    if file.filename == '':
+                        continue
+
+                    # Read file content
+                    file_content = file.read()
+                    file.seek(0)  # Reset for potential re-reading
+
+                    # Parse based on file type
+                    filename = file.filename
+                    lower_name = filename.lower()
+
+                    try:
+                        if lower_name.endswith('.pdf'):
+                            text = parser.parse_pdf_bytes(file_content)
+                        elif lower_name.endswith(('.docx', '.doc')):
+                            text = parser.parse_word_bytes(file_content)
+                        elif lower_name.endswith('.txt'):
+                            text = file_content.decode('utf-8')
+                        else:
+                            # Try to decode as text
+                            try:
+                                text = file_content.decode('utf-8')
+                            except:
+                                continue  # Skip unsupported files
+
+                        if not text or len(text.strip()) < 50:
+                            continue  # Skip empty/tiny files
+
+                        # Create document
+                        doc = Document(
+                            tenant_id=g.tenant_id,
+                            user_id=g.user_id,
+                            title=filename,
+                            content=text,
+                            source_type='manual_upload',
+                            classification=DocumentClassification.UNKNOWN,
+                            status=DocumentStatus.PENDING,
+                            metadata={
+                                'filename': filename,
+                                'uploaded_by': g.user_id,
+                                'file_size': len(file_content)
+                            }
+                        )
+                        db.add(doc)
+                        db.flush()
+
+                        documents_created.append({
+                            'id': doc.id,
+                            'title': doc.title,
+                            'status': doc.status.value
+                        })
+
+                    except Exception as e:
+                        print(f"[Upload] Error parsing {filename}: {e}")
+                        continue
+
+            else:
+                # Handle text paste
+                data = request.get_json()
+                if not data:
+                    return jsonify({
+                        "success": False,
+                        "error": "No data provided"
+                    }), 400
+
+                title = data.get('title', '').strip()
+                content = data.get('content', '').strip()
+                classification = data.get('classification', 'unknown').lower()
+
+                if not title or not content:
+                    return jsonify({
+                        "success": False,
+                        "error": "Title and content are required"
+                    }), 400
+
+                if len(content) < 50:
+                    return jsonify({
+                        "success": False,
+                        "error": "Content is too short (minimum 50 characters)"
+                    }), 400
+
+                # Map classification
+                class_map = {
+                    'work': DocumentClassification.WORK,
+                    'personal': DocumentClassification.PERSONAL,
+                    'spam': DocumentClassification.SPAM,
+                    'unknown': DocumentClassification.UNKNOWN
+                }
+                class_enum = class_map.get(classification, DocumentClassification.UNKNOWN)
+
+                # Create document
+                doc = Document(
+                    tenant_id=g.tenant_id,
+                    user_id=g.user_id,
+                    title=title,
+                    content=content,
+                    source_type='manual_paste',
+                    classification=class_enum,
+                    status=DocumentStatus.PENDING if class_enum == DocumentClassification.UNKNOWN else DocumentStatus.CONFIRMED,
+                    classification_confidence=1.0 if class_enum != DocumentClassification.UNKNOWN else None,
+                    metadata={
+                        'uploaded_by': g.user_id,
+                        'word_count': len(content.split())
+                    }
+                )
+                db.add(doc)
+                db.flush()
+
+                documents_created.append({
+                    'id': doc.id,
+                    'title': doc.title,
+                    'status': doc.status.value
+                })
+
+            if not documents_created:
+                return jsonify({
+                    "success": False,
+                    "error": "No valid documents were created"
+                }), 400
+
+            db.commit()
+
+            # Trigger embedding in background for all created documents
+            try:
+                embedding_service = get_embedding_service()
+                for doc_info in documents_created:
+                    doc = db.query(Document).filter(Document.id == doc_info['id']).first()
+                    if doc:
+                        embedding_service.embed_document(doc)
+                        doc.embedded_at = utc_now()
+                db.commit()
+            except Exception as e:
+                print(f"[Upload] Embedding error: {e}")
+                # Don't fail the upload if embedding fails
+
+            return jsonify({
+                "success": True,
+                "documents": documents_created,
+                "count": len(documents_created)
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        print(f"[Upload] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ============================================================================
 # CLASSIFICATION
 # ============================================================================
 
