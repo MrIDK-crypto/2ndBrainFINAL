@@ -1585,18 +1585,43 @@ def _run_connector_sync(
                         DeletedDocument.connector_id == connector.id
                     ).all()
                 )
+                print(f"[Sync] Deleted document IDs: {len(deleted_external_ids)}")
 
                 # Get list of existing external_ids to avoid duplicates
-                # CRITICAL: Only skip documents that are fully embedded, not just any existing doc
+                # CRITICAL: Only skip documents that:
+                # 1. Are fully embedded (embedded_at != None)
+                # 2. AND have actual content (to allow re-processing of empty content docs)
+                existing_docs_query = db.query(Document).filter(
+                    Document.tenant_id == tenant_id,
+                    Document.connector_id == connector.id,
+                    Document.external_id != None,
+                    Document.embedded_at != None  # Only skip if already embedded
+                ).all()
+
+                # Additionally filter out docs with empty/minimal content (likely failed extractions)
                 existing_external_ids = set(
-                    d.external_id for d in db.query(Document.external_id).filter(
-                        Document.tenant_id == tenant_id,
-                        Document.connector_id == connector.id,
-                        Document.external_id != None,
-                        Document.embedded_at != None  # Only skip if already embedded
-                    ).all()
+                    doc.external_id for doc in existing_docs_query
+                    if doc.content and len(doc.content.strip()) > 100  # Must have real content
                 )
-                print(f"[Sync] Existing embedded document IDs: {len(existing_external_ids)}")
+                print(f"[Sync] Existing embedded document IDs with content: {len(existing_external_ids)}")
+
+                # Check un-embedded existing documents for debugging
+                un_embedded_existing = db.query(Document).filter(
+                    Document.tenant_id == tenant_id,
+                    Document.connector_id == connector.id,
+                    Document.external_id != None,
+                    Document.embedded_at == None  # Not embedded
+                ).all()
+                un_embedded_ids = [doc.external_id for doc in un_embedded_existing]
+                print(f"[Sync] Un-embedded existing documents: {len(un_embedded_existing)} - {un_embedded_ids[:5]}")
+
+                # Delete documents with empty content so they can be re-synced
+                empty_content_docs = [doc for doc in un_embedded_existing if not doc.content or len(doc.content.strip()) < 100]
+                if empty_content_docs:
+                    print(f"[Sync] Deleting {len(empty_content_docs)} documents with empty content for re-sync")
+                    for doc in empty_content_docs:
+                        db.delete(doc)
+                    db.commit()
 
                 # Filter out deleted and existing documents
                 original_count = len(documents) if documents else 0

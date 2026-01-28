@@ -686,7 +686,7 @@ class BoxConnector(BaseConnector):
             # Download file content from Box (works with both SDKs)
             print(f"[BoxConnector] Downloading file {file_id} ({file_name}) for parsing...")
 
-            if self.sdk_version == "new":
+            if BOX_SDK_VERSION == "new":
                 # New SDK method
                 content_stream = self.client.downloads.download_file(file_id)
                 file_bytes = b""
