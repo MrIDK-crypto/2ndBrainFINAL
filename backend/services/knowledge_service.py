@@ -20,9 +20,10 @@ from pathlib import Path
 import tempfile
 import threading
 
-from openai import AzureOpenAI
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
+
+from services.openai_client import get_openai_client
 
 from database.models import (
     Document, KnowledgeGap, GapAnswer, Project, Tenant,
@@ -56,15 +57,7 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
-# Azure OpenAI Configuration
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT",
-    "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com"
-)
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
-AZURE_CHAT_DEPLOYMENT = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat")
-AZURE_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
+# Azure Whisper Deployment (still needed for transcription)
 AZURE_WHISPER_DEPLOYMENT = os.getenv("AZURE_WHISPER_DEPLOYMENT", "whisper")
 
 
@@ -137,11 +130,7 @@ Respond in JSON format:
 
     def __init__(self, db: Session):
         self.db = db
-        self.client = AzureOpenAI(
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_API_VERSION
-        )
+        self.client = get_openai_client()
 
     # ========================================================================
     # DOCUMENT CONTENT PREPARATION (for Knowledge Gap Analysis)
@@ -399,8 +388,7 @@ Respond in JSON format:
 
         # Call GPT-4 for analysis
         try:
-            response = self.client.chat.completions.create(
-                model=AZURE_CHAT_DEPLOYMENT,
+            response = self.client.chat_completion(
                 messages=[
                     {
                         "role": "system",
@@ -1732,9 +1720,8 @@ Respond in JSON format:
                 batch = chunks[i:i + batch_size]
                 batch_texts = [c["text"] for c in batch]
 
-                response = self.client.embeddings.create(
-                    model=AZURE_EMBEDDING_DEPLOYMENT,
-                    input=batch_texts,
+                response = self.client.create_embedding(
+                    text=batch_texts,
                     dimensions=1536  # Match existing index
                 )
 
@@ -1765,7 +1752,7 @@ Respond in JSON format:
                     "created_at": utc_now().isoformat(),
                     "document_count": len(documents),
                     "chunk_count": len(chunks),
-                    "embedding_model": AZURE_EMBEDDING_DEPLOYMENT,
+                    "embedding_model": self.client.get_embedding_model(),
                     "embedding_dimensions": 1536
                 }
             }

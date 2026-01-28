@@ -22,16 +22,7 @@ import time
 import hashlib
 from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass
-from openai import AzureOpenAI
-
-# Azure OpenAI Configuration from environment
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT",
-    "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com"
-)
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_API_VERSION = os.getenv("AZURE_EMBEDDING_API_VERSION", "2023-05-15")
-AZURE_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
+from services.openai_client import get_openai_client
 
 # Embedding dimensions - using 1536 for compatibility with existing index
 # text-embedding-3-large supports native dimensionality reduction
@@ -92,15 +83,8 @@ class PineconeVectorStore:
         self.config = config
         self.pc = Pinecone(api_key=config.api_key)
 
-        # Initialize Azure OpenAI client for embeddings
-        if not AZURE_OPENAI_API_KEY:
-            raise ValueError("AZURE_OPENAI_API_KEY is required")
-
-        self.openai = AzureOpenAI(
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_API_VERSION
-        )
+        # Initialize OpenAI client for embeddings
+        self.openai = get_openai_client()
 
         # Initialize or get index
         self.index = self._init_index()
@@ -136,9 +120,8 @@ class PineconeVectorStore:
             print(f"[PineconeVectorStore] WARNING: Text truncated from {len(text)} to {self.MAX_EMBEDDING_CHARS} chars")
             text = text[:self.MAX_EMBEDDING_CHARS]
 
-        response = self.openai.embeddings.create(
-            model=AZURE_EMBEDDING_DEPLOYMENT,
-            input=text,
+        response = self.openai.create_embedding(
+            text=text,
             dimensions=EMBEDDING_DIMENSIONS
         )
         return response.data[0].embedding
@@ -157,12 +140,16 @@ class PineconeVectorStore:
             else:
                 processed.append(t if t else "")
 
-        response = self.openai.embeddings.create(
-            model=AZURE_EMBEDDING_DEPLOYMENT,
-            input=processed,
-            dimensions=EMBEDDING_DIMENSIONS
-        )
-        return [item.embedding for item in response.data]
+        # For batch embeddings, we need to call the API directly for each text
+        # since our wrapper doesn't support batch yet
+        embeddings = []
+        for text in processed:
+            response = self.openai.create_embedding(
+                text=text,
+                dimensions=EMBEDDING_DIMENSIONS
+            )
+            embeddings.append(response.data[0].embedding)
+        return embeddings
 
     def _generate_vector_id(self, doc_id: str, chunk_idx: int = 0) -> str:
         """

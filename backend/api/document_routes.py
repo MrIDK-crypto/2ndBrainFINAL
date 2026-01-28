@@ -991,6 +991,61 @@ def bulk_delete():
         }), 500
 
 
+# ============================================================================
+# GET SINGLE DOCUMENT
+# ============================================================================
+
+@document_bp.route('/<document_id>', methods=['GET'])
+@require_auth
+def get_document(document_id):
+    """
+    Get a single document by ID with full content.
+
+    Response:
+    {
+        "success": true,
+        "document": {
+            "id": "...",
+            "title": "...",
+            "content": "...",
+            "content_html": "...",
+            "classification": "work",
+            "source_type": "email",
+            ...
+        }
+    }
+    """
+    try:
+        db = get_db()
+        try:
+            # Get document
+            doc = db.query(Document).filter(
+                Document.id == document_id,
+                Document.tenant_id == g.tenant_id,
+                Document.is_deleted == False
+            ).first()
+
+            if not doc:
+                return jsonify({
+                    "success": False,
+                    "error": "Document not found"
+                }), 404
+
+            return jsonify({
+                "success": True,
+                "document": doc.to_dict(include_content=True)
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @document_bp.route('/all', methods=['DELETE'])
 @require_auth
 def delete_all_documents():

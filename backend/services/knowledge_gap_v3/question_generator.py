@@ -14,21 +14,12 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from openai import AzureOpenAI
+from services.openai_client import get_openai_client
 
 from .gap_analyzers import Gap, GapType, GapSeverity
 from .knowledge_graph import KnowledgeGraph, Entity, EntityType
 
 logger = logging.getLogger(__name__)
-
-# Azure OpenAI Configuration
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT",
-    "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com"
-)
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
-DEFAULT_MODEL = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat")
 
 
 # =============================================================================
@@ -236,18 +227,10 @@ class QuestionGenerator:
 
     def __init__(self, graph: KnowledgeGraph, model: str = None):
         self.graph = graph
-        self.model = model or DEFAULT_MODEL
-
-        if not AZURE_OPENAI_API_KEY:
-            raise ValueError("AZURE_OPENAI_API_KEY is required for question generation")
-
-        self.client = AzureOpenAI(
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_API_VERSION
-        )
+        self.client = get_openai_client()
+        self.model = model or self.client.get_chat_model()
         self._question_counter = 0
-        logger.info(f"[QuestionGenerator] Initialized with Azure model: {self.model}")
+        logger.info(f"[QuestionGenerator] Initialized with model: {self.model}")
 
     def generate_questions(
         self,
@@ -305,8 +288,7 @@ class QuestionGenerator:
         org_context_str = json.dumps(org_context, indent=2) if org_context else "No organizational context provided"
 
         # Call GPT-4
-        response = self.client.chat.completions.create(
-            model=self.model,
+        response = self.client.chat_completion(
             messages=[
                 {"role": "system", "content": QUESTION_GENERATION_SYSTEM_PROMPT},
                 {"role": "user", "content": QUESTION_GENERATION_PROMPT.format(

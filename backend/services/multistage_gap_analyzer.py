@@ -22,19 +22,10 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from openai import AzureOpenAI
+from services.openai_client import get_openai_client
 
 
 logger = logging.getLogger(__name__)
-
-# Azure OpenAI Configuration
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT",
-    "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com"
-)
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
-AZURE_CHAT_DEPLOYMENT = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat")
 
 
 @dataclass
@@ -429,21 +420,17 @@ PRIORITY SCORING:
 
 Focus on what would cause the MOST PROBLEMS if the employee left tomorrow without answering."""
 
-    def __init__(self, client: Optional[AzureOpenAI] = None):
+    def __init__(self, client=None):
         """
         Initialize the Multi-Stage Gap Analyzer.
 
         Args:
-            client: Optional AzureOpenAI client. If not provided, creates one.
+            client: Optional OpenAI client wrapper. If not provided, creates one.
         """
         if client:
             self.client = client
         else:
-            self.client = AzureOpenAI(
-                azure_endpoint=AZURE_OPENAI_ENDPOINT,
-                api_key=AZURE_OPENAI_API_KEY,
-                api_version=AZURE_API_VERSION
-            )
+            self.client = get_openai_client()
 
     def analyze(
         self,
@@ -533,8 +520,7 @@ Focus on what would cause the MOST PROBLEMS if the employee left tomorrow withou
     ) -> Dict[str, Any]:
         """Call LLM and parse JSON response."""
         try:
-            response = self.client.chat.completions.create(
-                model=AZURE_CHAT_DEPLOYMENT,
+            response = self.client.chat_completion(
                 messages=[
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt}

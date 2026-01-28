@@ -19,21 +19,9 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 from sqlalchemy.orm import Session
 
-from openai import AzureOpenAI
+from services.openai_client import get_openai_client
 
 from database.models import Document
-
-
-# Azure OpenAI Configuration
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT",
-    "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com"
-)
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
-
-# Use the configured chat deployment for extraction
-EXTRACTION_MODEL = os.getenv("AZURE_EXTRACTION_MODEL", os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat"))
 
 # Max content to send for extraction (chars)
 MAX_EXTRACTION_CONTENT = 50000
@@ -92,18 +80,12 @@ class ExtractionService:
     we use these pre-extracted summaries.
     """
 
-    def __init__(self, client: Optional[AzureOpenAI] = None):
+    def __init__(self, client=None):
         """Initialize extraction service."""
         if client:
             self.client = client
         else:
-            if not AZURE_OPENAI_API_KEY:
-                raise ValueError("AZURE_OPENAI_API_KEY is required")
-            self.client = AzureOpenAI(
-                azure_endpoint=AZURE_OPENAI_ENDPOINT,
-                api_key=AZURE_OPENAI_API_KEY,
-                api_version=AZURE_API_VERSION
-            )
+            self.client = get_openai_client()
 
     def extract_from_content(
         self,
@@ -131,8 +113,7 @@ class ExtractionService:
             truncated_content += f"\n\n[... Content truncated. Original length: {len(content)} chars]"
 
         try:
-            response = self.client.chat.completions.create(
-                model=EXTRACTION_MODEL,
+            response = self.client.chat_completion(
                 messages=[
                     {
                         "role": "system",

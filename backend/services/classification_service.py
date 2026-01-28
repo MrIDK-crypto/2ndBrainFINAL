@@ -10,7 +10,6 @@ from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
 
-from openai import AzureOpenAI
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
@@ -19,16 +18,7 @@ from database.models import (
     DocumentStatus, DocumentClassification,
     utc_now
 )
-
-
-# Azure OpenAI Configuration
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT",
-    "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com"
-)
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
-AZURE_CHAT_DEPLOYMENT = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat")
+from services.openai_client import get_openai_client
 
 
 @dataclass
@@ -107,11 +97,7 @@ Be conservative: if unsure between WORK and PERSONAL, mark as borderline.
 
     def __init__(self, db: Session):
         self.db = db
-        self.client = AzureOpenAI(
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_API_VERSION
-        )
+        self.client = get_openai_client()
 
     # ========================================================================
     # SINGLE DOCUMENT CLASSIFICATION
@@ -140,8 +126,7 @@ Be conservative: if unsure between WORK and PERSONAL, mark as borderline.
             )
 
             # Call GPT-4
-            response = self.client.chat.completions.create(
-                model=AZURE_CHAT_DEPLOYMENT,
+            response = self.client.chat_completion(
                 messages=[
                     {
                         "role": "system",

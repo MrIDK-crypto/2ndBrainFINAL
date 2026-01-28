@@ -17,18 +17,9 @@ from datetime import datetime
 from enum import Enum
 import os
 
-from openai import AzureOpenAI
+from services.openai_client import get_openai_client
 
 logger = logging.getLogger(__name__)
-
-# Azure OpenAI Configuration
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT",
-    "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com"
-)
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
-DEFAULT_MODEL = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat")
 
 
 # =============================================================================
@@ -398,17 +389,9 @@ class DeepDocumentExtractor:
     """
 
     def __init__(self, model: str = None):
-        self.model = model or DEFAULT_MODEL
-
-        if not AZURE_OPENAI_API_KEY:
-            raise ValueError("AZURE_OPENAI_API_KEY is required for deep extraction")
-
-        self.client = AzureOpenAI(
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_API_VERSION
-        )
-        logger.info(f"[DeepExtractor] Initialized with Azure model: {self.model}")
+        self.client = get_openai_client()
+        self.model = model or self.client.get_chat_model()
+        logger.info(f"[DeepExtractor] Initialized with model: {self.model}")
 
     def extract(self, doc_id: str, title: str, content: str) -> DocumentExtraction:
         """
@@ -435,8 +418,7 @@ class DeepDocumentExtractor:
 
         try:
             # Call GPT-4 for extraction
-            response = self.client.chat.completions.create(
-                model=self.model,
+            response = self.client.chat_completion(
                 messages=[
                     {"role": "system", "content": DEEP_EXTRACTION_SYSTEM_PROMPT},
                     {"role": "user", "content": DEEP_EXTRACTION_USER_PROMPT.format(

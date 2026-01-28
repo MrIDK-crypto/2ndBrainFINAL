@@ -22,17 +22,7 @@ from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 from datetime import datetime
 
-from openai import AzureOpenAI
-
-# Azure OpenAI Configuration
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT",
-    "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com"
-)
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
-AZURE_CHAT_DEPLOYMENT = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat")
-AZURE_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
+from services.openai_client import get_openai_client
 
 # Cross-encoder for reranking
 try:
@@ -316,7 +306,7 @@ class MMRSelector:
 class HallucinationDetector:
     """Detect and flag potential hallucinations"""
 
-    def __init__(self, client: AzureOpenAI):
+    def __init__(self, client):
         self.client = client
 
     def extract_claims(self, answer: str) -> List[Dict]:
@@ -493,11 +483,7 @@ class EnhancedSearchService:
     """
 
     def __init__(self):
-        self.client = AzureOpenAI(
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_API_VERSION
-        )
+        self.client = get_openai_client()
 
         # Initialize components
         self.reranker = CrossEncoderReranker()
@@ -515,9 +501,8 @@ class EnhancedSearchService:
         if cache_key in self._embedding_cache:
             return self._embedding_cache[cache_key]
 
-        response = self.client.embeddings.create(
-            model=AZURE_EMBEDDING_DEPLOYMENT,
-            input=text,
+        response = self.client.create_embedding(
+            text=text,
             dimensions=1536
         )
         embedding = np.array(response.data[0].embedding, dtype=np.float32)
@@ -754,8 +739,7 @@ QUESTION: {query}
 Provide a well-cited answer following ALL citation rules above. End with "Sources Used: [list numbers]"."""
 
         try:
-            response = self.client.chat.completions.create(
-                model=AZURE_CHAT_DEPLOYMENT,
+            response = self.client.chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

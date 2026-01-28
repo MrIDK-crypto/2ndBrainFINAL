@@ -6,6 +6,7 @@ import Image from 'next/image'
 import axios from 'axios'
 import { useAuth, useAuthHeaders } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
+import DocumentViewer from './DocumentViewer'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003') + '/api'
 
@@ -22,6 +23,21 @@ interface Document {
   classification?: string
   source_type?: string
   folder_path?: string
+}
+
+interface FullDocument {
+  id: string
+  title: string
+  content: string
+  content_html?: string
+  classification?: string
+  source_type?: string
+  sender?: string
+  sender_email?: string
+  recipients?: string[]
+  source_created_at?: string
+  summary?: string
+  metadata?: any
 }
 
 const CategoryCard = ({ icon, title, count, active, onClick, color }: any) => (
@@ -97,6 +113,8 @@ export default function Documents() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [viewingDocument, setViewingDocument] = useState<FullDocument | null>(null)
+  const [loadingDocument, setLoadingDocument] = useState(false)
   const authHeaders = useAuthHeaders()
   const { token } = useAuth()
   const router = useRouter()
@@ -216,6 +234,26 @@ export default function Documents() {
       setDocuments([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const viewDocument = async (documentId: string) => {
+    setLoadingDocument(true)
+    try {
+      const response = await axios.get(`${API_BASE}/documents/${documentId}`, {
+        headers: authHeaders
+      })
+
+      if (response.data.success) {
+        setViewingDocument(response.data.document)
+      } else {
+        alert('Failed to load document: ' + (response.data.error || 'Unknown error'))
+      }
+    } catch (error: any) {
+      console.error('Error loading document:', error)
+      alert('Failed to load document: ' + (error.message || 'Unknown error'))
+    } finally {
+      setLoadingDocument(false)
     }
   }
 
@@ -667,7 +705,19 @@ export default function Documents() {
                         )}
                       </div>
                     </div>
-                    <div style={{ flex: 1, color: '#081028', fontFamily: '"Work Sans"', fontSize: '13px', fontWeight: 400, lineHeight: '16px' }}>
+                    <div
+                      onClick={() => viewDocument(doc.id)}
+                      style={{
+                        flex: 1,
+                        color: '#081028',
+                        fontFamily: '"Work Sans"',
+                        fontSize: '13px',
+                        fontWeight: 400,
+                        lineHeight: '16px',
+                        cursor: 'pointer',
+                        textDecoration: 'underline'
+                      }}
+                    >
                       {doc.name}
                     </div>
                     <div style={{ width: '150px', color: '#081028', fontFamily: '"Work Sans"', fontSize: '13px', fontWeight: 400, lineHeight: '16px' }}>
@@ -783,6 +833,53 @@ export default function Documents() {
           </div>
         </div>
       </div>
+
+      {/* Document Viewer Modal */}
+      {viewingDocument && (
+        <DocumentViewer
+          document={viewingDocument}
+          onClose={() => setViewingDocument(null)}
+        />
+      )}
+
+      {/* Loading Indicator for Document */}
+      {loadingDocument && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(8, 16, 40, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#FFE2BF',
+              borderRadius: '12px',
+              padding: '32px',
+              border: '1px solid #081028',
+              boxShadow: '4px 4px 8px rgba(16, 25, 52, 0.40)'
+            }}
+          >
+            <span
+              style={{
+                color: '#081028',
+                fontFamily: '"Work Sans", sans-serif',
+                fontSize: '16px',
+                fontWeight: 600
+              }}
+            >
+              Loading document...
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

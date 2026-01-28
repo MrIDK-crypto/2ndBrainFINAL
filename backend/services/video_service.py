@@ -360,13 +360,9 @@ class VideoService:
             return []
 
         # Use GPT to generate slide content
-        from openai import AzureOpenAI
+        from services.openai_client import get_openai_client
 
-        client = AzureOpenAI(
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            api_version=os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
-        )
+        client = get_openai_client()
 
         # Build document summary
         doc_texts = []
@@ -402,8 +398,7 @@ Respond in JSON format:
 """
 
         try:
-            response = client.chat.completions.create(
-                model=os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat"),
+            response = client.chat_completion(
                 messages=[
                     {"role": "system", "content": "You are a training content creator. Create clear, concise slides."},
                     {"role": "user", "content": prompt}
