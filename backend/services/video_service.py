@@ -2,6 +2,7 @@
 Video Generation Service
 AI-powered video generation from documents and knowledge gaps.
 Uses Azure TTS for professional voice quality.
+Supports Gamma API for AI-powered presentation generation.
 """
 
 import os
@@ -24,6 +25,13 @@ from database.models import (
     VideoStatus, DocumentClassification,
     generate_uuid, utc_now
 )
+
+# Import Gamma service
+try:
+    from services.gamma_service import get_gamma_service
+    GAMMA_AVAILABLE = True
+except ImportError:
+    GAMMA_AVAILABLE = False
 
 # Optional imports for video generation
 try:
@@ -142,7 +150,8 @@ class VideoService:
         title: str,
         document_ids: List[str],
         description: Optional[str] = None,
-        project_id: Optional[str] = None
+        project_id: Optional[str] = None,
+        use_gamma: bool = True  # NEW: Use Gamma API by default
     ) -> Tuple[Optional[Video], Optional[str]]:
         """
         Create a training video from documents.
@@ -153,6 +162,7 @@ class VideoService:
             document_ids: Documents to include
             description: Video description
             project_id: Optional project association
+            use_gamma: Use Gamma API for presentation generation (default True)
 
         Returns:
             (Video, error)
@@ -167,7 +177,7 @@ class VideoService:
                 status=VideoStatus.QUEUED,
                 source_type="documents",
                 source_document_ids=document_ids,
-                source_config={}
+                source_config={"use_gamma": use_gamma and GAMMA_AVAILABLE}
             )
             self.db.add(video)
             self.db.commit()
@@ -191,10 +201,22 @@ class VideoService:
         title: str,
         gap_ids: List[str],
         include_answers: bool = True,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        use_gamma: bool = True  # NEW: Use Gamma API by default
     ) -> Tuple[Optional[Video], Optional[str]]:
         """
         Create a training video from knowledge gaps and answers.
+
+        Args:
+            tenant_id: Tenant ID
+            title: Video title
+            gap_ids: Knowledge gap IDs
+            include_answers: Include answers in video
+            description: Video description
+            use_gamma: Use Gamma API for presentation generation (default True)
+
+        Returns:
+            (Video, error)
         """
         try:
             video = Video(
@@ -204,7 +226,10 @@ class VideoService:
                 status=VideoStatus.QUEUED,
                 source_type="knowledge_gaps",
                 source_document_ids=gap_ids,
-                source_config={"include_answers": include_answers}
+                source_config={
+                    "include_answers": include_answers,
+                    "use_gamma": use_gamma and GAMMA_AVAILABLE
+                }
             )
             self.db.add(video)
             self.db.commit()
@@ -245,22 +270,32 @@ class VideoService:
             output_dir = Path(tenant.data_directory) / "videos"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate slides based on source type
-            self._update_progress(db, video, 10, "Generating content...")
+            # Check if we should use Gamma API
+            use_gamma = video.source_config.get("use_gamma", False) and GAMMA_AVAILABLE
 
-            if video.source_type == "documents":
-                slides = self._generate_slides_from_documents(
-                    db, video.source_document_ids, tenant_id
-                )
-            elif video.source_type == "knowledge_gaps":
-                slides = self._generate_slides_from_gaps(
-                    db,
-                    video.source_document_ids,
-                    tenant_id,
-                    video.source_config.get("include_answers", True)
+            if use_gamma:
+                # Use Gamma API for presentation generation
+                self._update_progress(db, video, 10, "Generating presentation with Gamma AI...")
+                slides = self._generate_slides_with_gamma(
+                    db, video, tenant_id, output_dir
                 )
             else:
-                slides = []
+                # Generate slides locally based on source type
+                self._update_progress(db, video, 10, "Generating content...")
+
+                if video.source_type == "documents":
+                    slides = self._generate_slides_from_documents(
+                        db, video.source_document_ids, tenant_id
+                    )
+                elif video.source_type == "knowledge_gaps":
+                    slides = self._generate_slides_from_gaps(
+                        db,
+                        video.source_document_ids,
+                        tenant_id,
+                        video.source_config.get("include_answers", True)
+                    )
+                else:
+                    slides = []
 
             if not slides:
                 raise Exception("No content to generate video from")
@@ -473,6 +508,193 @@ Respond in JSON format:
             content="Thank you for watching!\n\nFor more information, consult the knowledge base.",
             notes="That concludes this knowledge transfer session. Thank you for watching."
         ))
+
+        return slides
+
+    def _generate_slides_with_gamma(
+        self,
+        db: Session,
+        video: Video,
+        tenant_id: str,
+        output_dir: Path
+    ) -> List[SlideContent]:
+        """
+        Generate slides using Gamma API.
+
+        Workflow:
+        1. Get source documents/gaps
+        2. Generate Gamma presentation
+        3. Export as PPTX
+        4. Download PPTX
+        5. Parse PPTX to extract slide content
+
+        Args:
+            db: Database session
+            video: Video object
+            tenant_id: Tenant ID
+            output_dir: Output directory for temp files
+
+        Returns:
+            List of SlideContent objects
+        """
+        try:
+            gamma_service = get_gamma_service()
+
+            # Prepare content based on source type
+            if video.source_type == "documents":
+                documents = db.query(Document).filter(
+                    Document.id.in_(video.source_document_ids),
+                    Document.tenant_id == tenant_id
+                ).all()
+
+                content = gamma_service.generate_from_documents(
+                    documents=documents,
+                    title=video.title
+                )
+
+            elif video.source_type == "knowledge_gaps":
+                gaps = db.query(KnowledgeGap).filter(
+                    KnowledgeGap.id.in_(video.source_document_ids),
+                    KnowledgeGap.tenant_id == tenant_id
+                ).all()
+
+                # Get answers if included
+                include_answers = video.source_config.get("include_answers", True)
+                answers = []
+                if include_answers:
+                    gap_ids = [g.id for g in gaps]
+                    answers = db.query(GapAnswer).filter(
+                        GapAnswer.knowledge_gap_id.in_(gap_ids)
+                    ).all()
+
+                content = gamma_service.generate_from_knowledge_gaps(
+                    gaps=gaps,
+                    answers=answers,
+                    title=video.title
+                )
+            else:
+                raise Exception(f"Unsupported source type: {video.source_type}")
+
+            print(f"[VideoService] Gamma content prepared ({len(content)} chars)")
+
+            # Generate presentation with PPTX export
+            result, error = gamma_service.generate_presentation(
+                content=content,
+                title=video.title,
+                export_format='pptx'
+            )
+
+            if error:
+                raise Exception(f"Gamma generation failed: {error}")
+
+            if not result or 'exportUrl' not in result:
+                raise Exception("Gamma did not return export URL")
+
+            export_url = result['exportUrl']
+            print(f"[VideoService] Gamma presentation created, downloading PPTX...")
+
+            # Download PPTX
+            pptx_path = output_dir / f"{video.id}_gamma.pptx"
+            success, download_error = gamma_service.download_export(
+                export_url=export_url,
+                output_path=str(pptx_path)
+            )
+
+            if not success:
+                raise Exception(f"PPTX download failed: {download_error}")
+
+            print(f"[VideoService] PPTX downloaded, parsing slides...")
+
+            # Parse PPTX to extract slides
+            slides = self._parse_pptx_to_slides(pptx_path)
+
+            print(f"[VideoService] Extracted {len(slides)} slides from Gamma PPTX")
+
+            # Store Gamma URL in video metadata
+            if 'url' in result:
+                video.source_config['gamma_url'] = result['url']
+                db.commit()
+
+            return slides
+
+        except Exception as e:
+            print(f"[VideoService] Gamma generation error: {e}")
+            # Fallback to local generation
+            print(f"[VideoService] Falling back to local slide generation...")
+
+            if video.source_type == "documents":
+                return self._generate_slides_from_documents(
+                    db, video.source_document_ids, tenant_id
+                )
+            else:
+                return self._generate_slides_from_gaps(
+                    db,
+                    video.source_document_ids,
+                    tenant_id,
+                    video.source_config.get("include_answers", True)
+                )
+
+    def _parse_pptx_to_slides(self, pptx_path: Path) -> List[SlideContent]:
+        """
+        Parse PPTX file to extract slide content.
+
+        Args:
+            pptx_path: Path to PPTX file
+
+        Returns:
+            List of SlideContent objects
+        """
+        if not PPTX_AVAILABLE:
+            raise Exception("python-pptx library not available")
+
+        slides = []
+        prs = Presentation(str(pptx_path))
+
+        for slide_num, slide in enumerate(prs.slides):
+            # Extract title
+            title = ""
+            if slide.shapes.title:
+                title = slide.shapes.title.text.strip()
+
+            # Extract content (bullet points and text)
+            content_parts = []
+            notes_parts = []
+
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    text = shape.text.strip()
+
+                    # Skip title (already extracted)
+                    if text == title:
+                        continue
+
+                    # Add to content
+                    content_parts.append(text)
+
+            # Extract speaker notes
+            if slide.has_notes_slide:
+                notes_slide = slide.notes_slide
+                if notes_slide.notes_text_frame:
+                    notes_text = notes_slide.notes_text_frame.text.strip()
+                    if notes_text:
+                        notes_parts.append(notes_text)
+
+            # Build final content and notes
+            content = '\n\n'.join(content_parts)
+            notes = '\n'.join(notes_parts) if notes_parts else content
+
+            # If no notes, use content as narration
+            if not notes and content:
+                notes = f"{title}. {content}"
+            elif not notes:
+                notes = title
+
+            slides.append(SlideContent(
+                title=title or f"Slide {slide_num + 1}",
+                content=content,
+                notes=notes,
+                duration_hint=max(len(notes) / 15, 5)  # ~15 chars/second, min 5s
+            ))
 
         return slides
 
