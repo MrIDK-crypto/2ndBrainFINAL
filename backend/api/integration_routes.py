@@ -1236,23 +1236,20 @@ def onedrive_auth():
         print("[OneDriveAuth] Starting OneDrive OAuth flow...")
         from connectors.onedrive_connector import OneDriveConnector
 
-        # Generate state
-        state = secrets.token_urlsafe(32)
         redirect_uri = os.getenv(
             "MICROSOFT_REDIRECT_URI",
             "http://localhost:5003/api/integrations/onedrive/callback"
         )
         print(f"[OneDriveAuth] Redirect URI: {redirect_uri}")
 
-        # Store state
-        oauth_states[state] = {
-            "type": "onedrive",
-            "tenant_id": g.tenant_id,
-            "user_id": g.user_id,
-            "redirect_uri": redirect_uri,
-            "created_at": utc_now().isoformat()
-        }
-        print(f"[OneDriveAuth] State stored for tenant: {g.tenant_id}")
+        # Create JWT state (multi-worker safe)
+        state = create_oauth_state(
+            tenant_id=g.tenant_id,
+            user_id=g.user_id,
+            connector_type="onedrive",
+            extra_data={"redirect_uri": redirect_uri}
+        )
+        print(f"[OneDriveAuth] JWT state created for tenant: {g.tenant_id}")
 
         # Get auth URL
         print("[OneDriveAuth] Getting auth URL from OneDriveConnector...")
@@ -1301,13 +1298,17 @@ def onedrive_callback():
         if not code or not state:
             return redirect(f"{FRONTEND_URL}/integrations?error=missing_params")
 
-        # Verify state
-        state_data = oauth_states.pop(state, None)
-        if not state_data or state_data["type"] != "onedrive":
+        # Verify JWT state (multi-worker safe)
+        state_data, error_msg = verify_oauth_state(state)
+        if error_msg or not state_data or state_data.get("connector_type") != "onedrive":
+            print(f"[OneDrive Callback] Invalid state: {error_msg}")
             return redirect(f"{FRONTEND_URL}/integrations?error=invalid_state")
 
+        tenant_id = state_data.get("tenant_id")
+        user_id = state_data.get("user_id")
+        redirect_uri = state_data.get("data", {}).get("redirect_uri")
+
         # Exchange code for tokens
-        redirect_uri = state_data["redirect_uri"]
         tokens, error = OneDriveConnector.exchange_code_for_tokens(code, redirect_uri)
 
         if error:
@@ -1317,7 +1318,7 @@ def onedrive_callback():
         db = get_db()
         try:
             connector = db.query(Connector).filter(
-                Connector.tenant_id == state_data["tenant_id"],
+                Connector.tenant_id == tenant_id,
                 Connector.connector_type == ConnectorType.ONEDRIVE
             ).first()
 
@@ -1332,8 +1333,8 @@ def onedrive_callback():
                 connector.updated_at = utc_now()
             else:
                 connector = Connector(
-                    tenant_id=state_data["tenant_id"],
-                    user_id=state_data["user_id"],
+                    tenant_id=tenant_id,
+                    user_id=user_id,
                     connector_type=ConnectorType.ONEDRIVE,
                     name="OneDrive",
                     status=ConnectorStatus.CONNECTED,
@@ -1349,16 +1350,16 @@ def onedrive_callback():
             if is_first_connection:
                 import threading
                 connector_id = connector.id
-                tenant_id = state_data["tenant_id"]
-                user_id = state_data["user_id"]
+                sync_tenant_id = tenant_id
+                sync_user_id = user_id
 
                 def run_initial_sync():
                     _run_connector_sync(
                         connector_id=connector_id,
                         connector_type="onedrive",
                         since=None,
-                        tenant_id=tenant_id,
-                        user_id=user_id,
+                        tenant_id=sync_tenant_id,
+                        user_id=sync_user_id,
                         full_sync=True
                     )
 
