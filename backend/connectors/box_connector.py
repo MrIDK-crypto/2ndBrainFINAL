@@ -485,7 +485,9 @@ class BoxConnector(BaseConnector):
 
             else:
                 # Legacy SDK (v3.x)
+                print(f"[BoxConnector] Using legacy SDK to get folder {folder_id}")
                 folder = self.client.folder(folder_id).get()
+                print(f"[BoxConnector] Got folder: name={folder.name}, id={folder.id}")
                 folder_path = f"{current_path}/{folder.name}" if current_path else folder.name
 
                 # Get folder items with pagination
@@ -493,6 +495,7 @@ class BoxConnector(BaseConnector):
                 limit = 100
 
                 while True:
+                    print(f"[BoxConnector] Getting folder items (legacy): folder_id={folder_id}, offset={offset}, limit={limit}")
                     items = folder.get_items(
                         limit=limit,
                         offset=offset,
@@ -501,10 +504,13 @@ class BoxConnector(BaseConnector):
                     )
 
                     items_list = list(items)
+                    print(f"[BoxConnector] Got {len(items_list)} items from folder {folder_id} (legacy SDK)")
                     if not items_list:
+                        print(f"[BoxConnector] No items found, breaking pagination loop")
                         break
 
                     for item in items_list:
+                        print(f"[BoxConnector] Item (legacy): id={item.id}, name={item.name}, type={item.type}")
                         if item.type == "folder":
                             if recursive and item.id not in exclude_folders:
                                 sub_docs = await self._sync_folder(
