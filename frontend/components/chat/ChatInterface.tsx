@@ -226,9 +226,17 @@ export default function ChatInterface() {
     }
 
     try {
-      // Use Enhanced RAG v2.1 endpoint with auth headers
+      // Build conversation history for context (last 5 messages)
+      const conversationHistory = messages.slice(-10).map(m => ({
+        role: m.isUser ? 'user' : 'assistant',
+        content: m.text
+      }))
+
+      // Use Enhanced RAG v2.1 endpoint with auth headers and conversation history
       const response = await axios.post(`${API_BASE}/search`, {
         query: queryText,
+        conversation_history: conversationHistory,
+        top_k: 15  // Get more results for better context
       }, {
         headers: getAuthHeaders()
       })

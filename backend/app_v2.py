@@ -251,6 +251,7 @@ def search():
 
     data = request.get_json() or {}
     query = data.get('query', '')
+    conversation_history = data.get('conversation_history', [])  # NEW: conversation context
     top_k = data.get('top_k', 10)
     include_sources = data.get('include_sources', True)
     use_enhanced = data.get('enhanced', True)  # Enhanced mode on by default
@@ -260,6 +261,8 @@ def search():
             "success": False,
             "error": "Query required"
         }), 400
+
+    print(f"[SEARCH] Conversation history length: {len(conversation_history)}", flush=True)
 
     try:
         vector_store = get_hybrid_store()
@@ -292,7 +295,8 @@ def search():
                 tenant_id=tenant_id,
                 vector_store=vector_store,
                 top_k=top_k,
-                validate=True
+                validate=True,
+                conversation_history=conversation_history  # Pass conversation history
             )
 
             # Format sources for response

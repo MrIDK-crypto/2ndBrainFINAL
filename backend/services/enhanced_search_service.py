@@ -660,20 +660,23 @@ class EnhancedSearchService:
         query: str,
         search_results: Dict,
         validate: bool = True,
-        max_context_tokens: int = 12000
+        max_context_tokens: int = 12000,
+        conversation_history: list = None
     ) -> Dict:
         """
-        Generate answer with strict citation enforcement.
+        Generate answer with strict citation enforcement and conversation context.
 
         Args:
             query: User query
             search_results: Results from enhanced_search
             validate: Run hallucination detection
             max_context_tokens: Max tokens for context
+            conversation_history: Previous messages for multi-turn conversations
 
         Returns:
             Dict with answer and validation results
         """
+        conversation_history = conversation_history or []
         results = search_results.get('results', [])
 
         if not results:
@@ -731,19 +734,44 @@ QUALITY STANDARDS:
 
 You will be evaluated on citation accuracy. Uncited claims are failures."""
 
-        user_prompt = f"""SOURCE DOCUMENTS:
+        # Build conversation context if history exists
+        conversation_context = ""
+        if conversation_history and len(conversation_history) > 0:
+            conversation_context = "CONVERSATION HISTORY (for context):\n"
+            for i, msg in enumerate(conversation_history[-6:], 1):  # Last 6 messages
+                role = "User" if msg.get('role') == 'user' else "Assistant"
+                content = msg.get('content', '')[:200]  # Limit to 200 chars per message
+                conversation_context += f"{role}: {content}\n"
+            conversation_context += "\n"
+
+        user_prompt = f"""{conversation_context}SOURCE DOCUMENTS:
 {context}
 
-QUESTION: {query}
+CURRENT QUESTION: {query}
 
-Provide a well-cited answer following ALL citation rules above. End with "Sources Used: [list numbers]"."""
+Provide a well-cited answer following ALL citation rules above.
+- Use conversation history for context (e.g., understand pronouns like "it", "that", "them")
+- Answer the CURRENT question directly
+- Cite sources with [Source X] for every claim
+End with "Sources Used: [list numbers]"."""
 
         try:
+            # Build messages array with conversation history
+            messages = [{"role": "system", "content": system_prompt}]
+
+            # Add last 4 messages from history for better context (not too many to avoid token limits)
+            if conversation_history and len(conversation_history) > 0:
+                for msg in conversation_history[-4:]:
+                    messages.append({
+                        "role": msg.get('role', 'user'),
+                        "content": msg.get('content', '')[:500]  # Limit each to 500 chars
+                    })
+
+            # Add current query with sources
+            messages.append({"role": "user", "content": user_prompt})
+
             response = self.client.chat_completion(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+                messages=messages,
                 temperature=0.1,  # Low for factual consistency
                 max_tokens=2000
             )
@@ -798,10 +826,11 @@ Provide a well-cited answer following ALL citation rules above. End with "Source
         tenant_id: str,
         vector_store,
         top_k: int = 10,
-        validate: bool = True
+        validate: bool = True,
+        conversation_history: list = None
     ) -> Dict:
         """
-        Complete enhanced RAG pipeline.
+        Complete enhanced RAG pipeline with conversation history support.
 
         Args:
             query: User query
@@ -809,6 +838,7 @@ Provide a well-cited answer following ALL citation rules above. End with "Source
             vector_store: Pinecone store
             top_k: Number of sources
             validate: Run hallucination detection
+            conversation_history: Previous messages for context (list of {role, content})
 
         Returns:
             Complete response with answer, sources, and metadata
@@ -821,11 +851,12 @@ Provide a well-cited answer following ALL citation rules above. End with "Source
             top_k=top_k
         )
 
-        # Generate answer
+        # Generate answer with conversation context
         answer_result = self.generate_answer(
             query=query,
             search_results=search_results,
-            validate=validate
+            validate=validate,
+            conversation_history=conversation_history or []
         )
 
         return {
