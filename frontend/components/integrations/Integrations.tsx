@@ -2064,6 +2064,15 @@ export default function Integrations() {
       window.history.replaceState({}, '', '/integrations')
       // Auto-start sync with progress for Box
       setTimeout(() => startSyncWithProgress('box'), 500)
+    } else if (success === 'github') {
+      setIntegrationsState(prev =>
+        prev.map(int =>
+          int.id === 'github' ? { ...int, connected: true } : int
+        )
+      )
+      window.history.replaceState({}, '', '/integrations')
+      // Auto-start sync with progress for GitHub
+      setTimeout(() => startSyncWithProgress('github'), 500)
     } else if (success === 'onedrive') {
       setIntegrationsState(prev =>
         prev.map(int =>
