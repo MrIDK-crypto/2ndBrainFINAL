@@ -35,10 +35,9 @@ pydub==0.25.1
 # Integrations
 boxsdk==3.9.2
 slack-sdk==3.26.2
-# Gmail temporarily disabled - will add back after deployment works
-# google-auth==2.23.0
-# google-auth-oauthlib==1.1.0
-# google-api-python-client==2.100.0
+google-auth==2.23.0
+google-auth-oauthlib==1.1.0
+google-api-python-client==2.100.0
 
 # Azure Speech (TTS)
 azure-cognitiveservices-speech==1.35.0
