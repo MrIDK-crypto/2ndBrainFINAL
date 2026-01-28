@@ -1022,8 +1022,6 @@ def github_auth():
     try:
         print("[GitHubAuth] Starting GitHub OAuth flow...")
 
-        # Generate state
-        state = secrets.token_urlsafe(32)
         client_id = os.getenv("GITHUB_CLIENT_ID", "")
         redirect_uri = os.getenv(
             "GITHUB_REDIRECT_URI",
@@ -1039,15 +1037,14 @@ def github_auth():
         print(f"[GitHubAuth] Client ID: {client_id[:10]}...")
         print(f"[GitHubAuth] Redirect URI: {redirect_uri}")
 
-        # Store state
-        oauth_states[state] = {
-            "type": "github",
-            "tenant_id": g.tenant_id,
-            "user_id": g.user_id,
-            "redirect_uri": redirect_uri,
-            "created_at": utc_now().isoformat()
-        }
-        print(f"[GitHubAuth] State stored for tenant: {g.tenant_id}")
+        # Create JWT state
+        state = create_oauth_state(
+            tenant_id=g.tenant_id,
+            user_id=g.user_id,
+            connector_type="github",
+            extra_data={"redirect_uri": redirect_uri}
+        )
+        print(f"[GitHubAuth] JWT state created for tenant: {g.tenant_id}")
 
         # Build GitHub OAuth URL
         auth_url = (
@@ -1098,16 +1095,21 @@ def github_callback():
         if not code or not state:
             return redirect(f"{FRONTEND_URL}/integrations?error=missing_params")
 
-        # Verify state
-        state_data = oauth_states.pop(state, None)
-        if not state_data or state_data["type"] != "github":
-            print(f"[GitHub Callback] Invalid state. Available states: {list(oauth_states.keys())}")
+        # Verify JWT state
+        state_data, error_msg = verify_oauth_state(state)
+        if error_msg or not state_data or state_data.get("connector_type") != "github":
+            print(f"[GitHub Callback] Invalid state: {error_msg}")
             return redirect(f"{FRONTEND_URL}/integrations?error=invalid_state")
+
+        tenant_id = state_data.get("tenant_id")
+        user_id = state_data.get("user_id")
+        redirect_uri = state_data.get("data", {}).get("redirect_uri")
+
+        print(f"[GitHub Callback] JWT state verified for tenant: {tenant_id}")
 
         # Exchange code for token
         client_id = os.getenv("GITHUB_CLIENT_ID", "")
         client_secret = os.getenv("GITHUB_CLIENT_SECRET", "")
-        redirect_uri = state_data["redirect_uri"]
 
         print(f"[GitHub Callback] Exchanging code for token...")
 
@@ -1149,7 +1151,7 @@ def github_callback():
         db = get_db()
         try:
             connector = db.query(Connector).filter(
-                Connector.tenant_id == state_data["tenant_id"],
+                Connector.tenant_id == tenant_id,
                 Connector.connector_type == ConnectorType.GITHUB
             ).first()
 
@@ -1168,8 +1170,8 @@ def github_callback():
                 connector.updated_at = utc_now()
             else:
                 connector = Connector(
-                    tenant_id=state_data["tenant_id"],
-                    user_id=state_data["user_id"],
+                    tenant_id=tenant_id,
+                    user_id=user_id,
                     connector_type=ConnectorType.GITHUB,
                     name=f"GitHub ({github_username})",
                     status=ConnectorStatus.CONNECTED,
@@ -1189,16 +1191,16 @@ def github_callback():
             if is_first_connection:
                 import threading
                 connector_id = connector.id
-                tenant_id = state_data["tenant_id"]
-                user_id = state_data["user_id"]
+                sync_tenant_id = tenant_id
+                sync_user_id = user_id
 
                 def run_initial_sync():
                     _run_connector_sync(
                         connector_id=connector_id,
                         connector_type="github",
                         since=None,
-                        tenant_id=tenant_id,
-                        user_id=user_id,
+                        tenant_id=sync_tenant_id,
+                        user_id=sync_user_id,
                         full_sync=True
                     )
 
