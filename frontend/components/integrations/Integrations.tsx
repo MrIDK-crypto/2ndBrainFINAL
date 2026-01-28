@@ -576,7 +576,8 @@ const SyncProgressModal = ({
           maxWidth: '380px',
           width: '90%',
           boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
-          position: 'relative'
+          position: 'relative',
+          margin: 'auto'
         }}
         onClick={e => e.stopPropagation()}
       >
