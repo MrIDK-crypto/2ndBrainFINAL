@@ -726,13 +726,14 @@ class BoxConnector(BaseConnector):
     ) -> Optional[Document]:
         """Process a single file"""
         try:
-            # Check modified date
-            if since:
-                modified_at = file_item.modified_at
-                if isinstance(modified_at, str):
-                    modified_at = datetime.fromisoformat(modified_at.replace('Z', '+00:00'))
-                if modified_at < since:
-                    return None
+            # Check modified date - DISABLED to allow syncing older files
+            # The sync() method handles date filtering at a higher level
+            # if since:
+            #     modified_at = file_item.modified_at
+            #     if isinstance(modified_at, str):
+            #         modified_at = datetime.fromisoformat(modified_at.replace('Z', '+00:00'))
+            #     if modified_at < since:
+            #         return None
 
             # Check file size
             if file_item.size and file_item.size > max_file_size:
