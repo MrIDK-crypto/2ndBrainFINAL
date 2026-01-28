@@ -391,18 +391,30 @@ curl -H "X-Tenant: victim-tenant-id" /api/documents
 
 ---
 
-### 6. RAG - No Re-embedding on Changes
-**Status:** 🟠 HIGH - UNFIXED
-**Location:** `services/embedding_service.py`, `vector_stores/pinecone_store.py`
+### ~~6. RAG - No Re-embedding on Changes~~
+**Status:** ✅ FIXED - Already Implemented
+**Location:** `services/embedding_service.py`, `vector_stores/pinecone_store.py`, `api/document_routes.py`
 
-**Problem:**
+**Problem (was):**
 - Document deleted → DB row deleted → Pinecone vectors REMAIN (orphaned)
 - Document updated → Old embeddings persist → Stale search results
 
-**Missing:**
-- Cascade delete to Pinecone on document deletion
-- Re-embedding trigger on content change
-- Orphan cleanup job
+**Fix Applied:**
+- ✅ Cascade delete to Pinecone on document deletion (both soft and hard)
+- ✅ Batch delete support for bulk operations
+- ✅ Database flags cleared (`embedded_at=None, embedding_generated=False`)
+- ✅ External ID tracking to prevent re-sync of deleted documents
+- ✅ Graceful error handling (continues if Pinecone fails)
+
+**Implementation:**
+```python
+# Single delete: DELETE /api/documents/<id>?hard=true
+# Bulk delete: POST /api/documents/bulk/delete
+embedding_service.delete_document_embeddings(doc_ids, tenant_id, db)
+  → vector_store.delete_documents()  # Delete from Pinecone
+  → Document.update(embedded_at=None)  # Clear DB flags
+  → DeletedDocument.create()  # Track external_id
+```
 
 ---
 
@@ -539,7 +551,7 @@ curl -H "X-Tenant: victim-tenant-id" /api/documents
 ### Before Production:
 5. Background job queue (Celery/RQ)
 6. Incremental Box sync
-7. Pinecone cleanup on delete
+7. ✅ Pinecone cleanup on delete - Already Implemented
 8. ✅ Gap deduplication - FIXED 2025-12-18
 9. Retry logic
 
