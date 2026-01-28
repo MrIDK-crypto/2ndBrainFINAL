@@ -42,8 +42,8 @@ class GitHubConnector(BaseConnector):
         "include_wiki": True,
         "max_issues_per_repo": None,  # No limit - sync all issues
         "max_prs_per_repo": None,  # No limit - sync all PRs
-        "code_extensions": [".py", ".js", ".ts", ".md", ".json", ".yaml", ".yml"],
-        "max_file_size": 100000  # Max file size in bytes
+        "code_extensions": [".py", ".js", ".ts", ".md", ".json", ".yaml", ".yml"]
+        # No limits on file size, directory depth, or file count
     }
 
     def __init__(self, config: ConnectorConfig):
@@ -148,10 +148,9 @@ class GitHubConnector(BaseConnector):
                 except GithubException:
                     print(f"Could not access repo: {repo_name}")
         else:
-            # Get user's repos
+            # Get user's repos (including forks)
             for repo in self.user.get_repos():
-                if not repo.fork:  # Skip forks by default
-                    repos.append(repo)
+                repos.append(repo)
 
         return repos
 
@@ -324,11 +323,10 @@ Deletions: -{pr.deletions}
         return documents
 
     async def _sync_code(self, repo) -> List[Document]:
-        """Sync important code files"""
+        """Sync all code files"""
         documents = []
 
         extensions = self.config.settings.get("code_extensions", [".py", ".js", ".md"])
-        max_size = self.config.settings.get("max_file_size", 100000)
 
         # Important files to always try to get
         important_files = [
@@ -342,12 +340,12 @@ Deletions: -{pr.deletions}
             contents = repo.get_contents("")
             files_to_process = []
 
-            # Walk through repo (limited depth)
+            # Walk through entire repo (no depth limit)
             while contents:
                 file_content = contents.pop(0)
 
-                if file_content.type == "dir" and file_content.path.count('/') < 2:
-                    # Only go 2 levels deep
+                if file_content.type == "dir":
+                    # Traverse all directories
                     try:
                         contents.extend(repo.get_contents(file_content.path))
                     except GithubException:
@@ -356,13 +354,12 @@ Deletions: -{pr.deletions}
                     # Check if we should include this file
                     is_important = file_content.name in important_files
                     has_extension = any(file_content.name.endswith(ext) for ext in extensions)
-                    is_small = file_content.size < max_size
 
-                    if (is_important or has_extension) and is_small:
+                    if is_important or has_extension:
                         files_to_process.append(file_content)
 
-            # Process files
-            for file_content in files_to_process[:50]:  # Limit total files
+            # Process all files (no limit)
+            for file_content in files_to_process:
                 try:
                     content = base64.b64decode(file_content.content).decode('utf-8', errors='ignore')
 
