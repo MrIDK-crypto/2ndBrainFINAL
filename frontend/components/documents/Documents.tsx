@@ -266,8 +266,8 @@ export default function Documents() {
 
   const loadDocuments = async () => {
     try {
-      // Load documents from the backend with auth
-      const response = await axios.get(`${API_BASE}/documents?limit=500`, {
+      // Load documents from the backend with auth (reduced from 500 to 50 for performance)
+      const response = await axios.get(`${API_BASE}/documents?limit=50`, {
         headers: authHeaders
       })
 

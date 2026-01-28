@@ -459,6 +459,10 @@ class Document(Base):
         Index('ix_document_tenant_status', 'tenant_id', 'status'),
         Index('ix_document_tenant_classification', 'tenant_id', 'classification'),
         Index('ix_document_external', 'tenant_id', 'connector_id', 'external_id'),
+        Index('ix_document_sender', 'tenant_id', 'sender_email'),  # For sender queries
+        Index('ix_document_embedded', 'tenant_id', 'embedded_at'),  # For embedding status
+        Index('ix_document_confidence', 'classification_confidence'),  # For sorting
+        Index('ix_document_created', 'tenant_id', 'created_at'),  # For date-based queries
     )
 
     def __repr__(self):

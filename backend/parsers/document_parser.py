@@ -179,9 +179,11 @@ class DocumentParser:
         }
 
     def _parse_xlsx(self, file_path: str) -> Dict:
-        """Extract text from Excel - NO row limit, processes entire spreadsheet"""
+        """Extract text from Excel with 10K row limit per sheet to prevent memory issues"""
+        MAX_ROWS_PER_SHEET = 10000
         text_parts = []
         total_rows = 0
+        truncated_sheets = []
 
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
 
@@ -189,10 +191,13 @@ class DocumentParser:
             sheet = wb[sheet_name]
             sheet_text = [f"[Sheet: {sheet_name}]"]
 
-            # Read ALL rows - no artificial limit
-            # Excel files are typically <50MB so this is fine
             row_count = 0
             for row in sheet.iter_rows(values_only=True):
+                # Stop if we hit the row limit
+                if row_count >= MAX_ROWS_PER_SHEET:
+                    truncated_sheets.append(sheet_name)
+                    break
+
                 # Filter out None values and convert to strings
                 row_values = [str(cell) for cell in row if cell is not None and str(cell).strip()]
                 if row_values:
@@ -203,6 +208,11 @@ class DocumentParser:
                 text_parts.append('\n'.join(sheet_text))
                 total_rows += row_count
 
+        # Add warning if any sheets were truncated
+        if truncated_sheets:
+            warning = f"\n\n[WARNING] The following sheets exceeded {MAX_ROWS_PER_SHEET:,} rows and were truncated: {', '.join(truncated_sheets)}"
+            text_parts.append(warning)
+
         content = '\n\n'.join(text_parts)
 
         return {
@@ -210,6 +220,8 @@ class DocumentParser:
             'metadata': {
                 'sheets': len(wb.sheetnames),
                 'total_rows': total_rows,
+                'truncated_sheets': truncated_sheets,
+                'max_rows_per_sheet': MAX_ROWS_PER_SHEET,
                 'file_type': 'xlsx'
             }
         }
