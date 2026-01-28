@@ -66,10 +66,11 @@ class OneDriveConnector(BaseConnector):
 
         config = cls._get_oauth_config()
 
-        # Create MSAL app
-        app = msal.PublicClientApplication(
+        # Create MSAL app (ConfidentialClient for server-side apps with client_secret)
+        app = msal.ConfidentialClientApplication(
             config["client_id"],
-            authority=f"https://login.microsoftonline.com/{config['tenant']}"
+            authority=f"https://login.microsoftonline.com/{config['tenant']}",
+            client_credential=config["client_secret"]
         )
 
         # Generate auth URL
@@ -92,10 +93,11 @@ class OneDriveConnector(BaseConnector):
 
             config = cls._get_oauth_config()
 
-            # Create MSAL app
-            app = msal.PublicClientApplication(
+            # Create MSAL app (ConfidentialClient for server-side apps with client_secret)
+            app = msal.ConfidentialClientApplication(
                 config["client_id"],
-                authority=f"https://login.microsoftonline.com/{config['tenant']}"
+                authority=f"https://login.microsoftonline.com/{config['tenant']}",
+                client_credential=config["client_secret"]
             )
 
             # Exchange code for token
