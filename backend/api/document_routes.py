@@ -404,6 +404,207 @@ def upload_documents():
         }), 500
 
 
+@document_bp.route('/upload-url', methods=['POST'])
+@require_auth
+def upload_from_url():
+    """
+    Add documents from URL (web page or PDF).
+
+    Request body (JSON):
+    {
+        "url": "https://example.com/document",
+        "classification": "work" | "personal" | "spam" | "unknown"  // Optional
+    }
+
+    Response:
+    {
+        "success": true,
+        "documents": [
+            {
+                "id": "...",
+                "title": "...",
+                "status": "pending" | "classified"
+            }
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data or 'url' not in data:
+            return jsonify({
+                "success": False,
+                "error": "URL is required"
+            }), 400
+
+        url = data.get('url', '').strip()
+        classification = data.get('classification', 'unknown').lower()
+
+        # Validate URL
+        if not url.startswith(('http://', 'https://')):
+            return jsonify({
+                "success": False,
+                "error": "Invalid URL. Must start with http:// or https://"
+            }), 400
+
+        db = get_db()
+        documents_created = []
+
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            from urllib.parse import urlparse
+            import io
+
+            # Fetch content from URL
+            print(f"[UploadURL] Fetching content from: {url}")
+            response = requests.get(url, timeout=30, headers={
+                'User-Agent': 'Mozilla/5.0 (compatible; 2ndBrainBot/1.0)'
+            })
+
+            if response.status_code != 200:
+                return jsonify({
+                    "success": False,
+                    "error": f"Failed to fetch URL: HTTP {response.status_code}"
+                }), 400
+
+            content_type = response.headers.get('Content-Type', '').lower()
+            parsed_url = urlparse(url)
+            title = parsed_url.path.split('/')[-1] or parsed_url.netloc
+
+            # Parse content based on type
+            if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
+                # Handle PDF
+                from parsers.document_parser import DocumentParser
+                parser = DocumentParser()
+                try:
+                    text = parser.parse_pdf_bytes(response.content)
+                    if not text or len(text.strip()) < 50:
+                        return jsonify({
+                            "success": False,
+                            "error": "PDF content is too short or empty"
+                        }), 400
+                except Exception as e:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Failed to parse PDF: {str(e)}"
+                    }), 400
+
+            elif 'text/html' in content_type:
+                # Handle HTML page
+                soup = BeautifulSoup(response.text, 'html.parser')
+
+                # Extract title
+                title_tag = soup.find('title')
+                if title_tag:
+                    title = title_tag.get_text().strip()
+
+                # Remove script and style
+                for script in soup(['script', 'style']):
+                    script.decompose()
+
+                # Extract text
+                main_content = (
+                    soup.find('main') or
+                    soup.find('article') or
+                    soup.find('body') or
+                    soup
+                )
+                text = main_content.get_text(separator='\n', strip=True)
+
+                # Clean up
+                lines = [line.strip() for line in text.split('\n') if line.strip()]
+                text = '\n\n'.join(lines)
+
+                if not text or len(text.strip()) < 50:
+                    return jsonify({
+                        "success": False,
+                        "error": "Page content is too short or empty"
+                    }), 400
+
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": f"Unsupported content type: {content_type}. Only HTML and PDF are supported."
+                }), 400
+
+            # Map classification
+            class_map = {
+                'work': DocumentClassification.WORK,
+                'personal': DocumentClassification.PERSONAL,
+                'spam': DocumentClassification.SPAM,
+                'unknown': DocumentClassification.UNKNOWN
+            }
+            class_enum = class_map.get(classification, DocumentClassification.UNKNOWN)
+
+            # Create document
+            doc = Document(
+                tenant_id=g.tenant_id,
+                user_id=g.user_id,
+                title=title,
+                content=text,
+                source_type='manual_url',
+                classification=class_enum,
+                status=DocumentStatus.PENDING if class_enum == DocumentClassification.UNKNOWN else DocumentStatus.CONFIRMED,
+                classification_confidence=1.0 if class_enum != DocumentClassification.UNKNOWN else None,
+                metadata={
+                    'url': url,
+                    'content_type': content_type,
+                    'uploaded_by': g.user_id,
+                    'fetched_at': datetime.now().isoformat()
+                }
+            )
+            db.add(doc)
+            db.commit()
+
+            documents_created.append({
+                'id': doc.id,
+                'title': doc.title,
+                'status': doc.status.value
+            })
+
+            # Trigger embedding in background
+            try:
+                from services.embedding_service import get_embedding_service
+                embedding_service = get_embedding_service()
+                embed_result = embedding_service.embed_documents(
+                    documents=[doc],
+                    tenant_id=g.tenant_id,
+                    db=db,
+                    force_reembed=False
+                )
+                print(f"[UploadURL] Embedding result: {embed_result}")
+            except Exception as embed_error:
+                print(f"[UploadURL] Embedding error (non-fatal): {embed_error}")
+
+            return jsonify({
+                "success": True,
+                "documents": documents_created,
+                "count": len(documents_created)
+            })
+
+        finally:
+            db.close()
+
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "success": False,
+            "error": "Request timed out. The URL may be slow or unavailable."
+        }), 500
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            "success": False,
+            "error": "Failed to connect to the URL. Please check the URL and try again."
+        }), 500
+    except Exception as e:
+        print(f"[UploadURL] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 # ============================================================================
 # CLASSIFICATION
 # ============================================================================

@@ -248,11 +248,12 @@ export default function Documents() {
 
   // Add documents modal state
   const [showAddModal, setShowAddModal] = useState(false)
-  const [uploadMode, setUploadMode] = useState<'file' | 'text'>('file')
+  const [uploadMode, setUploadMode] = useState<'file' | 'text' | 'url'>('file')
   const [uploading, setUploading] = useState(false)
   const [textTitle, setTextTitle] = useState('')
   const [textContent, setTextContent] = useState('')
   const [textClassification, setTextClassification] = useState('unknown')
+  const [urlInput, setUrlInput] = useState('')
   const authHeaders = useAuthHeaders()
   const { token } = useAuth()
   const router = useRouter()
@@ -632,6 +633,48 @@ export default function Documents() {
     } catch (error: any) {
       console.error('Error adding document:', error)
       alert(`Failed to add document: ${error.response?.data?.error || error.message}`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleUrlAdd = async () => {
+    if (!urlInput.trim()) {
+      alert('Please provide a URL')
+      return
+    }
+
+    // Validate URL format
+    try {
+      new URL(urlInput)
+    } catch {
+      alert('Please provide a valid URL (e.g., https://example.com)')
+      return
+    }
+
+    setUploading(true)
+    try {
+      const response = await axios.post(
+        `${API_BASE}/documents/upload-url`,
+        {
+          url: urlInput,
+          classification: textClassification
+        },
+        { headers: authHeaders }
+      )
+
+      if (response.data.success) {
+        setShowAddModal(false)
+        setUrlInput('')
+        setTextClassification('unknown')
+        await loadDocuments()
+        alert(`Document added successfully! ${response.data.documents?.length || 0} document(s) imported.`)
+      } else {
+        throw new Error(response.data.error || 'Upload failed')
+      }
+    } catch (error: any) {
+      console.error('Error adding document from URL:', error)
+      alert(`Failed to fetch content from URL: ${error.response?.data?.error || error.message}`)
     } finally {
       setUploading(false)
     }
@@ -1305,6 +1348,22 @@ export default function Documents() {
               >
                 Paste Text
               </button>
+              <button
+                onClick={() => setUploadMode('url')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: uploadMode === 'url' ? '#081028' : 'transparent',
+                  color: uploadMode === 'url' ? '#FFE2BF' : '#081028',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  fontFamily: '"Work Sans", sans-serif'
+                }}
+              >
+                Add from URL
+              </button>
             </div>
 
             {/* File Upload Mode */}
@@ -1446,6 +1505,93 @@ export default function Documents() {
                   }}
                 >
                   {uploading ? 'Adding Document...' : 'Add Document'}
+                </button>
+              </div>
+            )}
+
+            {/* URL Mode */}
+            {uploadMode === 'url' && (
+              <div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    display: 'block',
+                    marginBottom: '8px'
+                  }}>
+                    URL *
+                  </label>
+                  <input
+                    type="url"
+                    value={urlInput}
+                    onChange={e => setUrlInput(e.target.value)}
+                    placeholder="https://example.com/document.pdf"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid #D4D4D8',
+                      fontSize: '14px',
+                      fontFamily: 'Inter, sans-serif'
+                    }}
+                  />
+                  <div style={{
+                    marginTop: '4px',
+                    fontSize: '12px',
+                    color: '#71717A',
+                    fontFamily: 'Inter, sans-serif'
+                  }}>
+                    Supports: Web pages (HTML), PDF files, Google Docs (public links)
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    display: 'block',
+                    marginBottom: '8px'
+                  }}>
+                    Classification
+                  </label>
+                  <select
+                    value={textClassification}
+                    onChange={e => setTextClassification(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid #D4D4D8',
+                      fontSize: '14px',
+                      fontFamily: 'Inter, sans-serif'
+                    }}
+                  >
+                    <option value="unknown">Unknown</option>
+                    <option value="work">Work</option>
+                    <option value="personal">Personal</option>
+                    <option value="spam">Spam</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleUrlAdd}
+                  disabled={uploading || !urlInput.trim()}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: uploading || !urlInput.trim() ? '#9ca3af' : '#081028',
+                    color: '#FFE2BF',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    cursor: uploading || !urlInput.trim() ? 'not-allowed' : 'pointer',
+                    fontFamily: '"Work Sans", sans-serif'
+                  }}
+                >
+                  {uploading ? 'Fetching Content...' : 'Add from URL'}
                 </button>
               </div>
             )}
