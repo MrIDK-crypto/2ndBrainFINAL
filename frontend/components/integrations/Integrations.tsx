@@ -272,7 +272,16 @@ interface SyncProgress {
 const SYNC_STATE_KEY = '2ndbrain_sync_state'
 const CONNECTED_INTEGRATIONS_KEY = '2ndbrain_connected_integrations'
 
-const saveSyncState = (state: { integration: string; startTime: number } | null) => {
+const saveSyncState = (state: {
+  integration: string;
+  startTime?: number;
+  status?: string;
+  progress?: number;
+  documentsFound?: number;
+  documentsParsed?: number;
+  documentsEmbedded?: number;
+  completedAt?: number;
+} | null) => {
   if (typeof window === 'undefined') return
   if (state) {
     localStorage.setItem(SYNC_STATE_KEY, JSON.stringify(state))
@@ -281,7 +290,16 @@ const saveSyncState = (state: { integration: string; startTime: number } | null)
   }
 }
 
-const loadSyncState = (): { integration: string; startTime: number } | null => {
+const loadSyncState = (): {
+  integration: string;
+  startTime?: number;
+  status?: string;
+  progress?: number;
+  documentsFound?: number;
+  documentsParsed?: number;
+  documentsEmbedded?: number;
+  completedAt?: number;
+} | null => {
   if (typeof window === 'undefined') return null
   try {
     const saved = localStorage.getItem(SYNC_STATE_KEY)
@@ -1931,6 +1949,20 @@ export default function Integrations() {
   useEffect(() => {
     const savedState = loadSyncState()
     if (savedState) {
+      // If saved state already shows completed, just restore it without polling
+      if (savedState.status === 'completed' || savedState.status === 'error') {
+        setSyncProgress({
+          integration: savedState.integration,
+          status: savedState.status as any,
+          progress: savedState.progress || 100,
+          documentsFound: savedState.documentsFound || 0,
+          documentsParsed: savedState.documentsParsed || 0,
+          documentsEmbedded: savedState.documentsEmbedded || 0
+        })
+        // Don't show modal automatically for old completed syncs
+        return
+      }
+
       // There was an active sync - check its status
       const token = getAuthToken()
       if (token) {
@@ -1957,8 +1989,7 @@ export default function Integrations() {
               const interval = setInterval(() => pollSyncStatus(savedState.integration), 1000)
               setSyncPollingInterval(interval)
             } else if (status.status === 'completed') {
-              // Sync completed while user was away - show completion modal briefly
-              saveSyncState(null)
+              // Sync completed while user was away - keep the completed state
               const integrationName = savedState.integration.charAt(0).toUpperCase() + savedState.integration.slice(1)
 
               // Mark integration as connected
@@ -1968,7 +1999,7 @@ export default function Integrations() {
                 )
               )
 
-              // Show completed state in modal
+              // Show and save completed state
               setSyncProgress({
                 integration: savedState.integration,
                 status: 'completed',
@@ -1979,6 +2010,17 @@ export default function Integrations() {
               })
               setShowSyncProgress(true)
               setSyncStatus(`${integrationName} sync completed while you were away!`)
+
+              // Save completed state so it persists
+              saveSyncState({
+                integration: savedState.integration,
+                status: 'completed',
+                progress: 100,
+                documentsFound: status.documents_found || 0,
+                documentsParsed: status.documents_parsed || 0,
+                documentsEmbedded: status.documents_embedded || 0,
+                completedAt: Date.now()
+              })
             } else {
               // Sync errored or unknown state - clear saved state
               saveSyncState(null)
@@ -2205,9 +2247,8 @@ export default function Integrations() {
           error: status.error
         })
 
-        // Stop polling if completed or error
+        // Stop polling if completed or error, but keep the completed state visible
         if (status.status === 'completed' || status.status === 'error') {
-          saveSyncState(null) // Clear saved sync state
           if (syncPollingInterval) {
             clearInterval(syncPollingInterval)
             setSyncPollingInterval(null)
@@ -2221,6 +2262,18 @@ export default function Integrations() {
               )
             )
           }
+
+          // Keep the completed state in localStorage so it persists
+          // Only clear when user explicitly closes or starts new sync
+          saveSyncState({
+            integration: integrationId,
+            status: status.status,
+            progress: 100,
+            documentsFound: status.documents_found || 0,
+            documentsParsed: status.documents_parsed || 0,
+            documentsEmbedded: status.documents_embedded || 0,
+            completedAt: Date.now()
+          })
         }
       }
     } catch (error) {
@@ -2287,11 +2340,11 @@ export default function Integrations() {
     // The backend runs sync in a separate thread, so it will complete even if user navigates away
   }
 
-  // Close sync progress modal (full close - stops polling)
+  // Close sync progress modal (hide modal but keep completed state for persistence)
   const closeSyncProgress = () => {
     setShowSyncProgress(false)
-    setSyncProgress(null)
-    saveSyncState(null) // Clear saved sync state
+    // Don't clear syncProgress or saved state - keep it for next time modal opens
+    // State will only be cleared when a new sync starts
     if (syncPollingInterval) {
       clearInterval(syncPollingInterval)
       setSyncPollingInterval(null)
