@@ -39,12 +39,14 @@ class DocumentParser:
 
     # File extensions handled by Azure Document Intelligence
     AZURE_DI_EXTENSIONS = {
-        ".pdf",
+        # PDFs moved to LlamaParse (Azure DI is not configured)
+        # ".pdf",
         ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif",
     }
 
     # File extensions handled by LlamaParse
     LLAMAPARSE_EXTENSIONS = {
+        ".pdf",  # Use LlamaParse for PDFs (Azure DI not configured)
         ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
         ".rtf", ".odt", ".ods", ".odp",
     }

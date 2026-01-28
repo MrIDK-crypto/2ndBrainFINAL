@@ -1568,6 +1568,15 @@ def _run_connector_sync(
                     full_sync = True
                     since = None
                     print(f"[Sync] First sync detected for {connector_type}, doing full sync")
+
+                    # Clear any deleted document records on first sync (fresh start)
+                    deleted_count = db.query(DeletedDocument).filter(
+                        DeletedDocument.tenant_id == tenant_id,
+                        DeletedDocument.connector_id == connector.id
+                    ).delete()
+                    if deleted_count > 0:
+                        db.commit()
+                        print(f"[Sync] Cleared {deleted_count} deleted document records for fresh start")
                 # Use last sync time if not doing full sync
                 elif not since and connector.last_sync_at and not full_sync:
                     since = connector.last_sync_at
