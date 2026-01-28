@@ -320,35 +320,44 @@ class WebScraperConnector(BaseConnector):
             print(f"[WebScraper]     Parsing HTML (length: {len(html_content)})")
             soup = BeautifulSoup(html_content, "html.parser")
 
-            # Remove script and style elements
-            for script in soup(["script", "style", "nav", "footer", "header"]):
-                script.decompose()
-
-            # Extract title
+            # Extract title first (before removing anything)
             title = soup.find("title")
             title_text = title.get_text().strip() if title else urlparse(url).path
             print(f"[WebScraper]     Title: {title_text}")
 
+            # Only remove script and style elements (keep nav, header, footer - they often have content)
+            for script in soup(["script", "style"]):
+                script.decompose()
+
+            print(f"[WebScraper]     After removing script/style, soup length: {len(str(soup))}")
+
             # Extract main content
-            # Try to find main content area
+            # Try to find main content area, but be less strict
             main_content = (
                 soup.find("main") or
                 soup.find("article") or
-                soup.find("div", class_=re.compile(r"content|main|body", re.I)) or
+                soup.find("div", id=re.compile(r"content|main", re.I)) or
+                soup.find("div", class_=re.compile(r"content|main", re.I)) or
                 soup.find("body") or
                 soup
             )
 
-            # Extract text
+            print(f"[WebScraper]     Found content container: {main_content.name if hasattr(main_content, 'name') else 'unknown'}")
+
+            # Extract text with more lenient approach
             text = main_content.get_text(separator="\n", strip=True)
+            print(f"[WebScraper]     Raw text length: {len(text)}")
 
             # Clean up excessive whitespace
             lines = [line.strip() for line in text.split("\n") if line.strip()]
             content = "\n\n".join(lines)
 
-            print(f"[WebScraper]     Extracted content length: {len(content)}")
+            print(f"[WebScraper]     Cleaned content length: {len(content)}")
+            print(f"[WebScraper]     Number of lines: {len(lines)}")
+
             if len(content) < 100:  # Skip pages with very little content
                 print(f"[WebScraper]     Content too short (<100 chars), skipping")
+                print(f"[WebScraper]     Content preview: {content[:200]}")
                 return None
 
             # Extract metadata
