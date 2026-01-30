@@ -1,387 +1,468 @@
 """
 GitHub Connector
-Connects to GitHub API to extract code, issues, PRs, and documentation.
+OAuth integration and repository code analysis for 2nd Brain.
 """
 
-from datetime import datetime
-from typing import List, Dict, Optional, Any
+import os
+import re
+import requests
+from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timezone
 import base64
 
-from .base_connector import BaseConnector, ConnectorConfig, ConnectorStatus, Document
 
-# Note: Requires PyGithub
-# pip install PyGithub
-
-try:
-    from github import Github, GithubException
-    GITHUB_AVAILABLE = True
-except ImportError:
-    GITHUB_AVAILABLE = False
-
-
-class GitHubConnector(BaseConnector):
+class GitHubConnector:
     """
-    GitHub connector for extracting code and project knowledge.
+    Handle GitHub OAuth and repository access.
 
-    Extracts:
-    - Repository README and documentation
-    - Issues and discussions
-    - Pull request descriptions and reviews
-    - Code files (key files like configs, main modules)
-    - Commit messages
-    - Wiki pages
+    Features:
+    - OAuth 2.0 flow
+    - Repository listing
+    - Code file fetching
+    - Smart filtering (code files only)
+    - Rate limit handling
     """
 
-    CONNECTOR_TYPE = "github"
-    REQUIRED_CREDENTIALS = ["access_token"]
-    OPTIONAL_SETTINGS = {
-        "repos": [],  # Specific repos to sync (owner/repo format)
-        "include_code": True,
-        "include_issues": True,
-        "include_prs": True,
-        "include_wiki": True,
-        "max_issues_per_repo": None,  # No limit - sync all issues
-        "max_prs_per_repo": None,  # No limit - sync all PRs
-        "code_extensions": [".py", ".js", ".ts", ".md", ".json", ".yaml", ".yml"]
-        # No limits on file size, directory depth, or file count
-    }
+    def __init__(self, access_token: Optional[str] = None):
+        """
+        Initialize GitHub connector.
 
-    def __init__(self, config: ConnectorConfig):
-        super().__init__(config)
-        self.client = None
-        self.user = None
+        Args:
+            access_token: GitHub OAuth access token
+        """
+        self.access_token = access_token
+        self.client_id = os.getenv('GITHUB_CLIENT_ID')
+        self.client_secret = os.getenv('GITHUB_CLIENT_SECRET')
+        self.redirect_uri = os.getenv('GITHUB_REDIRECT_URI', 'http://localhost:5003/api/integrations/github/callback')
 
-    async def connect(self) -> bool:
-        """Connect to GitHub API"""
-        if not GITHUB_AVAILABLE:
-            self._set_error("PyGithub not installed. Run: pip install PyGithub")
-            return False
+        self.base_url = 'https://api.github.com'
+        self.headers = {
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+        }
 
-        try:
-            self.status = ConnectorStatus.CONNECTING
+        if self.access_token:
+            self.headers['Authorization'] = f'Bearer {self.access_token}'
 
-            self.client = Github(self.config.credentials.get("access_token"))
+    # =========================================================================
+    # OAUTH FLOW
+    # =========================================================================
 
-            # Test connection by getting user
-            self.user = self.client.get_user()
-            _ = self.user.login  # Force API call
+    def get_authorization_url(self, state: str) -> str:
+        """
+        Get GitHub OAuth authorization URL.
 
-            self.sync_stats["user"] = self.user.login
-            self.status = ConnectorStatus.CONNECTED
-            self._clear_error()
-            return True
+        Args:
+            state: CSRF protection state
 
-        except GithubException as e:
-            self._set_error(f"GitHub API error: {e.data.get('message', str(e))}")
-            return False
-        except Exception as e:
-            self._set_error(f"Failed to connect: {str(e)}")
-            return False
+        Returns:
+            Authorization URL to redirect user to
+        """
+        scopes = ['repo', 'read:user', 'read:org']
+        scope_string = ' '.join(scopes)
 
-    async def disconnect(self) -> bool:
-        """Disconnect from GitHub API"""
-        self.client = None
-        self.user = None
-        self.status = ConnectorStatus.DISCONNECTED
-        return True
+        return (
+            f"https://github.com/login/oauth/authorize?"
+            f"client_id={self.client_id}&"
+            f"redirect_uri={self.redirect_uri}&"
+            f"scope={scope_string}&"
+            f"state={state}"
+        )
 
-    async def test_connection(self) -> bool:
-        """Test GitHub connection"""
-        if not self.client:
-            return False
+    def exchange_code_for_token(self, code: str) -> Dict:
+        """
+        Exchange authorization code for access token.
 
-        try:
-            _ = self.client.get_user().login
-            return True
-        except Exception:
-            return False
+        Args:
+            code: Authorization code from GitHub
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
-        """Sync documents from GitHub"""
-        if not self.client:
-            await self.connect()
+        Returns:
+            {
+                'access_token': '...',
+                'token_type': 'bearer',
+                'scope': 'repo,read:user'
+            }
+        """
+        response = requests.post(
+            'https://github.com/login/oauth/access_token',
+            headers={'Accept': 'application/json'},
+            data={
+                'client_id': self.client_id,
+                'client_secret': self.client_secret,
+                'code': code,
+                'redirect_uri': self.redirect_uri
+            }
+        )
 
-        if self.status != ConnectorStatus.CONNECTED:
-            return []
+        response.raise_for_status()
+        data = response.json()
 
-        self.status = ConnectorStatus.SYNCING
-        documents = []
+        if 'error' in data:
+            raise Exception(f"GitHub OAuth error: {data.get('error_description', data['error'])}")
 
-        try:
-            # Get repos to sync
-            repos = await self._get_repos()
+        return data
 
-            for repo in repos:
-                repo_docs = await self._sync_repo(repo, since)
-                documents.extend(repo_docs)
+    # =========================================================================
+    # USER & REPOSITORY INFO
+    # =========================================================================
 
-            # Update stats
-            self.sync_stats["documents_synced"] = len(documents)
-            self.sync_stats["repos_synced"] = len(repos)
-            self.sync_stats["sync_time"] = datetime.now().isoformat()
+    def get_user_info(self) -> Dict:
+        """
+        Get authenticated user information.
 
-            self.config.last_sync = datetime.now()
-            self.status = ConnectorStatus.CONNECTED
+        Returns:
+            {
+                'login': 'username',
+                'id': 12345,
+                'name': 'Full Name',
+                'email': 'user@example.com',
+                'avatar_url': '...',
+                'public_repos': 10,
+                'total_private_repos': 5
+            }
+        """
+        response = requests.get(
+            f'{self.base_url}/user',
+            headers=self.headers
+        )
+        response.raise_for_status()
+        return response.json()
 
-        except Exception as e:
-            self._set_error(f"Sync failed: {str(e)}")
+    def get_repositories(self, per_page: int = 100) -> List[Dict]:
+        """
+        Get all repositories accessible to user.
 
-        return documents
+        Args:
+            per_page: Results per page (max 100)
 
-    async def get_document(self, doc_id: str) -> Optional[Document]:
-        """Get a specific document"""
-        # Parse doc_id to determine type and fetch
-        return None
-
-    async def _get_repos(self) -> List:
-        """Get list of repos to sync"""
+        Returns:
+            List of repository dicts with:
+            - id, name, full_name
+            - description, language
+            - private, fork, archived
+            - default_branch, size
+            - created_at, updated_at, pushed_at
+        """
         repos = []
+        page = 1
 
-        configured_repos = self.config.settings.get("repos", [])
+        while True:
+            response = requests.get(
+                f'{self.base_url}/user/repos',
+                headers=self.headers,
+                params={
+                    'per_page': per_page,
+                    'page': page,
+                    'sort': 'updated',
+                    'affiliation': 'owner,collaborator,organization_member'
+                }
+            )
+            response.raise_for_status()
 
-        if configured_repos:
-            # Get specific repos
-            for repo_name in configured_repos:
-                try:
-                    repo = self.client.get_repo(repo_name)
-                    repos.append(repo)
-                except GithubException:
-                    print(f"Could not access repo: {repo_name}")
-        else:
-            # Get user's repos (including forks)
-            for repo in self.user.get_repos():
-                repos.append(repo)
+            batch = response.json()
+            if not batch:
+                break
+
+            repos.extend(batch)
+
+            # Check if more pages
+            if len(batch) < per_page:
+                break
+
+            page += 1
 
         return repos
 
-    async def _sync_repo(self, repo, since: Optional[datetime]) -> List[Document]:
-        """Sync documents from a single repository"""
-        documents = []
+    # =========================================================================
+    # CODE FETCHING
+    # =========================================================================
 
-        repo_name = repo.full_name
+    # Code file extensions to analyze
+    CODE_EXTENSIONS = {
+        # Backend
+        '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.go', '.rb', '.php',
+        '.cs', '.cpp', '.c', '.h', '.hpp', '.rs', '.kt', '.swift', '.scala',
 
-        # Sync README
-        readme_doc = await self._get_readme(repo)
-        if readme_doc:
-            documents.append(readme_doc)
+        # Frontend
+        '.html', '.css', '.scss', '.sass', '.less', '.vue', '.svelte',
 
-        # Sync issues
-        if self.config.settings.get("include_issues", True):
-            issue_docs = await self._sync_issues(repo, since)
-            documents.extend(issue_docs)
+        # Config & Infrastructure
+        '.yaml', '.yml', '.json', '.toml', '.ini', '.conf',
+        '.tf', '.tfvars',  # Terraform
 
-        # Sync PRs
-        if self.config.settings.get("include_prs", True):
-            pr_docs = await self._sync_prs(repo, since)
-            documents.extend(pr_docs)
+        # Documentation
+        '.md', '.rst', '.txt',
 
-        # Sync code files
-        if self.config.settings.get("include_code", True):
-            code_docs = await self._sync_code(repo)
-            documents.extend(code_docs)
+        # Database
+        '.sql',
 
-        return documents
+        # Scripts
+        '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat'
+    }
 
-    async def _get_readme(self, repo) -> Optional[Document]:
-        """Get repository README"""
+    # Directories to skip
+    SKIP_DIRS = {
+        'node_modules', 'venv', 'env', '.venv', '__pycache__', 'dist', 'build',
+        '.git', '.svn', '.hg', 'vendor', 'tmp', 'temp', 'cache', '.cache',
+        'coverage', '.coverage', '.pytest_cache', '.mypy_cache', '.tox',
+        'logs', 'log', '.DS_Store', 'target', 'out', '.next', '.nuxt'
+    }
+
+    def get_repository_tree(self, owner: str, repo: str, branch: str = 'main') -> List[Dict]:
+        """
+        Get repository file tree recursively.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            branch: Branch name (default: main)
+
+        Returns:
+            List of file dicts with:
+            - path, type (blob/tree), sha, size, url
+        """
         try:
-            readme = repo.get_readme()
-            content = base64.b64decode(readme.content).decode('utf-8', errors='ignore')
-
-            return Document(
-                doc_id=f"github_{repo.full_name}_readme",
-                source="github",
-                content=f"# {repo.full_name} README\n\n{content}",
-                title=f"README - {repo.name}",
-                metadata={
-                    "repo": repo.full_name,
-                    "path": readme.path,
-                    "doc_subtype": "readme"
-                },
-                author=repo.owner.login,
-                url=readme.html_url,
-                doc_type="documentation"
+            response = requests.get(
+                f'{self.base_url}/repos/{owner}/{repo}/git/trees/{branch}',
+                headers=self.headers,
+                params={'recursive': '1'}
             )
+            response.raise_for_status()
 
-        except GithubException:
+            data = response.json()
+            return data.get('tree', [])
+
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                # Try 'master' branch
+                response = requests.get(
+                    f'{self.base_url}/repos/{owner}/{repo}/git/trees/master',
+                    headers=self.headers,
+                    params={'recursive': '1'}
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data.get('tree', [])
+            raise
+
+    def filter_code_files(self, tree: List[Dict], max_files: int = 500) -> List[Dict]:
+        """
+        Filter tree to only code files (skip binaries, dependencies, etc.).
+
+        Args:
+            tree: Repository tree from get_repository_tree()
+            max_files: Maximum files to return
+
+        Returns:
+            Filtered list of code files sorted by relevance
+        """
+        code_files = []
+
+        for item in tree:
+            # Only process files (blobs), not directories
+            if item['type'] != 'blob':
+                continue
+
+            path = item['path']
+
+            # Skip files in ignored directories
+            path_parts = path.split('/')
+            if any(part in self.SKIP_DIRS for part in path_parts):
+                continue
+
+            # Check file extension
+            _, ext = os.path.splitext(path.lower())
+            if ext not in self.CODE_EXTENSIONS:
+                continue
+
+            # Skip very large files (>1MB)
+            if item.get('size', 0) > 1_000_000:
+                continue
+
+            code_files.append(item)
+
+        # Prioritize important files
+        def priority_score(item):
+            path = item['path'].lower()
+            score = 0
+
+            # Boost important files
+            if 'readme' in path:
+                score += 1000
+            if path.endswith('.md'):
+                score += 100
+            if 'config' in path or 'settings' in path:
+                score += 50
+            if path.endswith(('.py', '.js', '.ts', '.go', '.java')):
+                score += 10
+
+            # Penalize test files (but don't skip)
+            if 'test' in path or 'spec' in path:
+                score -= 5
+
+            return -score  # Negative for reverse sort
+
+        code_files.sort(key=priority_score)
+
+        return code_files[:max_files]
+
+    def get_file_content(self, owner: str, repo: str, path: str) -> Optional[str]:
+        """
+        Get file content from GitHub.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            path: File path in repository
+
+        Returns:
+            File content as string, or None if binary/error
+        """
+        try:
+            response = requests.get(
+                f'{self.base_url}/repos/{owner}/{repo}/contents/{path}',
+                headers=self.headers
+            )
+            response.raise_for_status()
+
+            data = response.json()
+
+            # GitHub returns content as base64
+            if 'content' in data:
+                content_b64 = data['content']
+                content_bytes = base64.b64decode(content_b64)
+
+                # Try to decode as UTF-8 (skip binary files)
+                try:
+                    return content_bytes.decode('utf-8')
+                except UnicodeDecodeError:
+                    return None
+
             return None
 
-    async def _sync_issues(self, repo, since: Optional[datetime]) -> List[Document]:
-        """Sync repository issues"""
-        documents = []
-        max_issues = self.config.settings.get("max_issues_per_repo")  # None = unlimited
+        except Exception as e:
+            print(f"[GitHub] Error fetching {path}: {e}")
+            return None
 
-        try:
-            issues = repo.get_issues(state="all", sort="updated", direction="desc")
+    def fetch_repository_code(
+        self,
+        owner: str,
+        repo: str,
+        max_files: int = 100,
+        max_chars_per_file: int = 50000
+    ) -> List[Dict]:
+        """
+        Fetch code files from repository with content.
 
-            count = 0
-            for issue in issues:
-                if max_issues is not None and count >= max_issues:
-                    break
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            max_files: Maximum files to fetch
+            max_chars_per_file: Max characters per file
 
-                if since and issue.updated_at < since:
-                    break
+        Returns:
+            List of dicts:
+            {
+                'path': 'src/main.py',
+                'content': '...',
+                'language': 'Python',
+                'size': 1234,
+                'lines': 50
+            }
+        """
+        print(f"[GitHub] Fetching repository tree: {owner}/{repo}")
+        tree = self.get_repository_tree(owner, repo)
 
-                # Get issue content
-                content = f"""GitHub Issue: {issue.title}
-Repository: {repo.full_name}
-State: {issue.state}
-Created: {issue.created_at}
-Author: {issue.user.login if issue.user else 'Unknown'}
-Labels: {', '.join([l.name for l in issue.labels])}
+        print(f"[GitHub] Found {len(tree)} total items in repository")
+        code_files = self.filter_code_files(tree, max_files=max_files)
 
-{issue.body or '(No description)'}
+        print(f"[GitHub] Filtered to {len(code_files)} code files")
 
----
-Comments ({issue.comments}):
-"""
-                # Get top comments
-                for comment in issue.get_comments()[:5]:
-                    content += f"\n@{comment.user.login}: {comment.body[:500]}\n"
+        results = []
 
-                documents.append(Document(
-                    doc_id=f"github_{repo.full_name}_issue_{issue.number}",
-                    source="github",
-                    content=content,
-                    title=f"Issue #{issue.number}: {issue.title}",
-                    metadata={
-                        "repo": repo.full_name,
-                        "issue_number": issue.number,
-                        "state": issue.state,
-                        "labels": [l.name for l in issue.labels],
-                        "doc_subtype": "issue"
-                    },
-                    timestamp=issue.updated_at,
-                    author=issue.user.login if issue.user else None,
-                    url=issue.html_url,
-                    doc_type="issue"
-                ))
+        for i, file_item in enumerate(code_files, 1):
+            path = file_item['path']
+            print(f"[GitHub] [{i}/{len(code_files)}] Fetching: {path}")
 
-                count += 1
+            content = self.get_file_content(owner, repo, path)
 
-        except GithubException as e:
-            print(f"Error syncing issues for {repo.full_name}: {e}")
+            if content is None:
+                print(f"[GitHub]   → Skipped (binary or error)")
+                continue
 
-        return documents
+            # Truncate if too long
+            if len(content) > max_chars_per_file:
+                content = content[:max_chars_per_file] + "\n\n[... truncated ...]"
 
-    async def _sync_prs(self, repo, since: Optional[datetime]) -> List[Document]:
-        """Sync pull requests"""
-        documents = []
-        max_prs = self.config.settings.get("max_prs_per_repo")  # None = unlimited
+            # Detect language from extension
+            _, ext = os.path.splitext(path)
+            language = self._extension_to_language(ext)
 
-        try:
-            prs = repo.get_pulls(state="all", sort="updated", direction="desc")
+            results.append({
+                'path': path,
+                'content': content,
+                'language': language,
+                'size': file_item.get('size', len(content)),
+                'lines': content.count('\n') + 1
+            })
 
-            count = 0
-            for pr in prs:
-                if max_prs is not None and count >= max_prs:
-                    break
+        print(f"[GitHub] Successfully fetched {len(results)} files")
+        return results
 
-                if since and pr.updated_at < since:
-                    break
+    @staticmethod
+    def _extension_to_language(ext: str) -> str:
+        """Map file extension to language name"""
+        mapping = {
+            '.py': 'Python',
+            '.js': 'JavaScript',
+            '.ts': 'TypeScript',
+            '.jsx': 'React JSX',
+            '.tsx': 'React TSX',
+            '.java': 'Java',
+            '.go': 'Go',
+            '.rb': 'Ruby',
+            '.php': 'PHP',
+            '.cs': 'C#',
+            '.cpp': 'C++',
+            '.c': 'C',
+            '.h': 'C/C++ Header',
+            '.rs': 'Rust',
+            '.kt': 'Kotlin',
+            '.swift': 'Swift',
+            '.scala': 'Scala',
+            '.html': 'HTML',
+            '.css': 'CSS',
+            '.scss': 'SCSS',
+            '.yaml': 'YAML',
+            '.yml': 'YAML',
+            '.json': 'JSON',
+            '.md': 'Markdown',
+            '.sql': 'SQL',
+            '.sh': 'Shell',
+            '.bash': 'Bash',
+        }
+        return mapping.get(ext.lower(), 'Unknown')
 
-                # Get PR content
-                content = f"""GitHub Pull Request: {pr.title}
-Repository: {repo.full_name}
-State: {pr.state}
-Merged: {pr.merged}
-Created: {pr.created_at}
-Author: {pr.user.login if pr.user else 'Unknown'}
-Base: {pr.base.ref} <- Head: {pr.head.ref}
+    # =========================================================================
+    # RATE LIMIT HANDLING
+    # =========================================================================
 
-{pr.body or '(No description)'}
+    def get_rate_limit(self) -> Dict:
+        """
+        Get current rate limit status.
 
----
-Changed files: {pr.changed_files}
-Additions: +{pr.additions}
-Deletions: -{pr.deletions}
-"""
+        Returns:
+            {
+                'limit': 5000,
+                'remaining': 4999,
+                'reset': 1234567890  # Unix timestamp
+            }
+        """
+        response = requests.get(
+            f'{self.base_url}/rate_limit',
+            headers=self.headers
+        )
+        response.raise_for_status()
 
-                documents.append(Document(
-                    doc_id=f"github_{repo.full_name}_pr_{pr.number}",
-                    source="github",
-                    content=content,
-                    title=f"PR #{pr.number}: {pr.title}",
-                    metadata={
-                        "repo": repo.full_name,
-                        "pr_number": pr.number,
-                        "state": pr.state,
-                        "merged": pr.merged,
-                        "doc_subtype": "pull_request"
-                    },
-                    timestamp=pr.updated_at,
-                    author=pr.user.login if pr.user else None,
-                    url=pr.html_url,
-                    doc_type="pull_request"
-                ))
-
-                count += 1
-
-        except GithubException as e:
-            print(f"Error syncing PRs for {repo.full_name}: {e}")
-
-        return documents
-
-    async def _sync_code(self, repo) -> List[Document]:
-        """Sync all code files"""
-        documents = []
-
-        extensions = self.config.settings.get("code_extensions", [".py", ".js", ".md"])
-
-        # Important files to always try to get
-        important_files = [
-            "README.md", "CONTRIBUTING.md", "CHANGELOG.md",
-            "package.json", "requirements.txt", "setup.py",
-            "Dockerfile", "docker-compose.yml",
-            ".env.example", "config.yaml", "config.json"
-        ]
-
-        try:
-            contents = repo.get_contents("")
-            files_to_process = []
-
-            # Walk through entire repo (no depth limit)
-            while contents:
-                file_content = contents.pop(0)
-
-                if file_content.type == "dir":
-                    # Traverse all directories
-                    try:
-                        contents.extend(repo.get_contents(file_content.path))
-                    except GithubException:
-                        pass
-                elif file_content.type == "file":
-                    # Check if we should include this file
-                    is_important = file_content.name in important_files
-                    has_extension = any(file_content.name.endswith(ext) for ext in extensions)
-
-                    if is_important or has_extension:
-                        files_to_process.append(file_content)
-
-            # Process all files (no limit)
-            for file_content in files_to_process:
-                try:
-                    content = base64.b64decode(file_content.content).decode('utf-8', errors='ignore')
-
-                    documents.append(Document(
-                        doc_id=f"github_{repo.full_name}_file_{file_content.path.replace('/', '_')}",
-                        source="github",
-                        content=f"# {repo.full_name}/{file_content.path}\n\n```\n{content}\n```",
-                        title=f"{file_content.name} - {repo.name}",
-                        metadata={
-                            "repo": repo.full_name,
-                            "path": file_content.path,
-                            "size": file_content.size,
-                            "doc_subtype": "code"
-                        },
-                        url=file_content.html_url,
-                        doc_type="code"
-                    ))
-
-                except Exception as e:
-                    print(f"Error processing file {file_content.path}: {e}")
-
-        except GithubException as e:
-            print(f"Error syncing code for {repo.full_name}: {e}")
-
-        return documents
+        data = response.json()
+        return data['resources']['core']

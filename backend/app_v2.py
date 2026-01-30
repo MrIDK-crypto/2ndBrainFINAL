@@ -64,6 +64,7 @@ from api.chat_routes import chat_bp
 from api.jobs_routes import jobs_bp
 from api.slack_bot_routes import slack_bot_bp
 from api.profile_routes import profile_bp
+from api.github_routes import github_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(integration_bp)
@@ -74,6 +75,7 @@ app.register_blueprint(chat_bp)
 app.register_blueprint(jobs_bp)
 app.register_blueprint(slack_bot_bp)
 app.register_blueprint(profile_bp)
+app.register_blueprint(github_bp)
 
 print("✓ API blueprints registered")
 
