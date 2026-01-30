@@ -26,25 +26,25 @@ from services.auth_service import PasswordUtils
 TENANTS = [
     {
         "name": "Acme Corporation",
-        "domain": "acme.com",
+        "slug": "acme",
         "plan": TenantPlan.ENTERPRISE,
         "description": "Enterprise customer - unlimited access",
     },
     {
         "name": "Startup Inc",
-        "domain": "startup.io",
+        "slug": "startup",
         "plan": TenantPlan.PROFESSIONAL,
         "description": "Professional plan with advanced features",
     },
     {
         "name": "Small Business LLC",
-        "domain": "smallbiz.com",
+        "slug": "smallbiz",
         "plan": TenantPlan.STARTER,
         "description": "Starter plan - basic features",
     },
     {
         "name": "Free Tier Co",
-        "domain": "freetier.org",
+        "slug": "freetier",
         "plan": TenantPlan.FREE,
         "description": "Free plan for testing",
     },
@@ -56,21 +56,21 @@ USERS = [
         "email": "admin@acme.com",
         "password": "admin123",
         "name": "Alice Admin",
-        "tenant_domain": "acme.com",
+        "tenant_slug": "acme",
         "role": UserRole.ADMIN,
     },
     {
         "email": "user@acme.com",
         "password": "user123",
         "name": "Bob User",
-        "tenant_domain": "acme.com",
+        "tenant_slug": "acme",
         "role": UserRole.MEMBER,
     },
     {
         "email": "viewer@acme.com",
         "password": "viewer123",
         "name": "Charlie Viewer",
-        "tenant_domain": "acme.com",
+        "tenant_slug": "acme",
         "role": UserRole.VIEWER,
     },
 
@@ -79,14 +79,14 @@ USERS = [
         "email": "founder@startup.io",
         "password": "founder123",
         "name": "Diana Founder",
-        "tenant_domain": "startup.io",
+        "tenant_slug": "startup",
         "role": UserRole.ADMIN,
     },
     {
         "email": "engineer@startup.io",
         "password": "engineer123",
         "name": "Eve Engineer",
-        "tenant_domain": "startup.io",
+        "tenant_slug": "startup",
         "role": UserRole.MEMBER,
     },
 
@@ -95,14 +95,14 @@ USERS = [
         "email": "owner@smallbiz.com",
         "password": "owner123",
         "name": "Frank Owner",
-        "tenant_domain": "smallbiz.com",
+        "tenant_slug": "smallbiz",
         "role": UserRole.ADMIN,
     },
     {
         "email": "employee@smallbiz.com",
         "password": "employee123",
         "name": "Grace Employee",
-        "tenant_domain": "smallbiz.com",
+        "tenant_slug": "smallbiz",
         "role": UserRole.MEMBER,
     },
 
@@ -111,7 +111,7 @@ USERS = [
         "email": "test@freetier.org",
         "password": "test123",
         "name": "Henry Test",
-        "tenant_domain": "freetier.org",
+        "tenant_slug": "freetier",
         "role": UserRole.ADMIN,
     },
 
@@ -120,14 +120,14 @@ USERS = [
         "email": "demo@acme.com",
         "password": "demo123",
         "name": "Ivan Demo",
-        "tenant_domain": "acme.com",
+        "tenant_slug": "acme",
         "role": UserRole.MEMBER,
     },
     {
         "email": "demo@startup.io",
         "password": "demo123",
         "name": "Julia Demo",
-        "tenant_domain": "startup.io",
+        "tenant_slug": "startup",
         "role": UserRole.MEMBER,
     },
 ]
@@ -146,7 +146,7 @@ def create_tenants(db):
 
         tenant = Tenant(
             name=tenant_data['name'],
-            domain=tenant_data['domain'],
+            slug=tenant_data['slug'],
             plan=tenant_data['plan'],
             is_active=True,
             created_at=datetime.now(timezone.utc)
@@ -155,10 +155,10 @@ def create_tenants(db):
         db.add(tenant)
         db.flush()  # Get tenant.id without committing
 
-        tenant_map[tenant_data['domain']] = tenant.id
+        tenant_map[tenant_data['slug']] = tenant.id
 
         print(f"  ✓ ID: {tenant.id}")
-        print(f"  ✓ Domain: {tenant.domain}")
+        print(f"  ✓ Slug: {tenant.slug}")
         print(f"  ✓ Plan: {tenant.plan.value}")
         print(f"  ✓ {tenant_data['description']}")
 
@@ -179,7 +179,7 @@ def create_users(db, tenant_map):
     for i, user_data in enumerate(USERS, 1):
         print(f"\n[{i}/{len(USERS)}] Creating: {user_data['name']}")
 
-        tenant_id = tenant_map[user_data['tenant_domain']]
+        tenant_id = tenant_map[user_data['tenant_slug']]
 
         # Hash password
         password_hash = PasswordUtils.hash_password(user_data['password'])
@@ -187,7 +187,7 @@ def create_users(db, tenant_map):
         user = User(
             email=user_data['email'],
             password_hash=password_hash,
-            name=user_data['name'],
+            full_name=user_data['name'],
             tenant_id=tenant_id,
             role=user_data['role'],
             is_active=True,
@@ -203,14 +203,14 @@ def create_users(db, tenant_map):
             'password': user_data['password'],
             'name': user_data['name'],
             'role': user_data['role'].value,
-            'tenant_domain': user_data['tenant_domain'],
+            'tenant_slug': user_data['tenant_slug'],
             'tenant_id': tenant_id,
             'user_id': user.id
         })
 
         print(f"  ✓ ID: {user.id}")
         print(f"  ✓ Email: {user.email}")
-        print(f"  ✓ Tenant: {user_data['tenant_domain']}")
+        print(f"  ✓ Tenant: {user_data['tenant_slug']}")
         print(f"  ✓ Role: {user.role.value}")
 
     db.commit()
@@ -228,13 +228,13 @@ def print_summary(user_credentials):
     # Group by tenant
     by_tenant = {}
     for cred in user_credentials:
-        domain = cred['tenant_domain']
-        if domain not in by_tenant:
-            by_tenant[domain] = []
-        by_tenant[domain].append(cred)
+        slug = cred['tenant_slug']
+        if slug not in by_tenant:
+            by_tenant[slug] = []
+        by_tenant[slug].append(cred)
 
-    for domain, users in by_tenant.items():
-        print(f"\n📁 {domain}")
+    for slug, users in by_tenant.items():
+        print(f"\n📁 {slug}")
         print("  " + "-"*66)
         for user in users:
             print(f"  👤 {user['name']:<20} ({user['role']})")
@@ -268,7 +268,7 @@ def verify_tenant_isolation(db):
 
     for tenant in tenants:
         user_count = db.query(User).filter(User.tenant_id == tenant.id).count()
-        print(f"\n✓ {tenant.name} ({tenant.domain}):")
+        print(f"\n✓ {tenant.name} ({tenant.slug}):")
         print(f"  - Tenant ID: {tenant.id}")
         print(f"  - Plan: {tenant.plan.value}")
         print(f"  - Users: {user_count}")

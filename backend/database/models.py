@@ -209,7 +209,15 @@ class User(Base):
     # Profile
     full_name = Column(String(255))
     avatar_url = Column(String(500))
+    bio = Column(Text)  # User biography/description
+    phone = Column(String(20))  # Phone number
+    job_title = Column(String(100))  # Job title/position
+    department = Column(String(100))  # Department/team
+    location = Column(String(255))  # City, Country
     timezone = Column(String(50), default="UTC")
+    language = Column(String(10), default="en")  # ISO 639-1 language code
+    date_format = Column(String(20), default="YYYY-MM-DD")  # Preferred date format
+    time_format = Column(String(10), default="24h")  # "12h" or "24h"
 
     # Role & Permissions
     role = Column(Enum(UserRole), default=UserRole.MEMBER, nullable=False)
@@ -257,10 +265,21 @@ class User(Base):
             "email": self.email,
             "full_name": self.full_name,
             "avatar_url": self.avatar_url,
+            "bio": self.bio,
+            "phone": self.phone,
+            "job_title": self.job_title,
+            "department": self.department,
+            "location": self.location,
+            "timezone": self.timezone,
+            "language": self.language,
+            "date_format": self.date_format,
+            "time_format": self.time_format,
             "role": self.role.value,
             "email_verified": self.email_verified,
             "mfa_enabled": self.mfa_enabled,
+            "preferences": self.preferences or {},
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "is_active": self.is_active
         }
         if include_sensitive:
