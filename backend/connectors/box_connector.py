@@ -14,6 +14,13 @@ import mimetypes
 
 from .base_connector import BaseConnector, ConnectorConfig, ConnectorStatus, Document
 
+# S3 Service for file storage
+try:
+    from services.s3_service import get_s3_service
+    S3_AVAILABLE = True
+except ImportError:
+    S3_AVAILABLE = False
+
 # Note: Requires box-sdk-gen (Box SDK v10+)
 # pip install boxsdk
 
@@ -605,18 +612,92 @@ class BoxConnector(BaseConnector):
             full_path = f"{folder_path}/{file_name}"
             print(f"[BoxConnector] Processing {file_name}: ext={file_ext}, path={full_path}")
 
-            # Extract content if possible using LlamaParse
+            # Download file once from Box (for both S3 and content extraction)
+            file_bytes = None
+            file_url = None
             content = ""
-            if file_ext.lower() in self.EXTRACTABLE_TYPES:
-                print(f"[BoxConnector] {file_name} is extractable type, calling LlamaParse...")
+
+            # Download file if it's extractable or S3 is available
+            should_download = (file_ext.lower() in self.EXTRACTABLE_TYPES) or S3_AVAILABLE
+
+            if should_download:
                 try:
-                    content = await self._extract_content_new_sdk(file_id, file_ext, file_name)
-                    print(f"[BoxConnector] {file_name} extracted {len(content)} chars")
+                    print(f"[BoxConnector] Downloading {file_name}...")
+
+                    if BOX_SDK_VERSION == "new":
+                        content_stream = self.client.downloads.download_file(file_id)
+                        file_bytes = b""
+                        for chunk in content_stream:
+                            file_bytes += chunk
+                    else:
+                        import io
+                        box_file = self.client.file(file_id)
+                        content_stream = io.BytesIO()
+                        box_file.download_to(content_stream)
+                        content_stream.seek(0)
+                        file_bytes = content_stream.read()
+
+                    if file_bytes:
+                        print(f"[BoxConnector] Downloaded {len(file_bytes)} bytes")
+                    else:
+                        print(f"[BoxConnector] Empty file content for {file_id}")
+
+                except Exception as download_err:
+                    print(f"[BoxConnector] Download error for {file_name}: {download_err}")
+                    file_bytes = None
+
+            # Upload to S3 if available
+            if S3_AVAILABLE and file_bytes:
+                try:
+                    s3_service = get_s3_service()
+
+                    # Detect content type
+                    content_type = None
+                    if file_ext:
+                        content_type, _ = mimetypes.guess_type(file_name)
+
+                    s3_key = s3_service.generate_s3_key(
+                        tenant_id=self.config.tenant_id,
+                        file_type='box_files',
+                        filename=file_name
+                    )
+
+                    file_url, s3_error = s3_service.upload_bytes(
+                        file_bytes=file_bytes,
+                        s3_key=s3_key,
+                        content_type=content_type
+                    )
+
+                    if file_url:
+                        print(f"[BoxConnector] ✓ Uploaded to S3: {file_url}")
+                    else:
+                        print(f"[BoxConnector] S3 upload failed: {s3_error}")
+
+                except Exception as s3_err:
+                    print(f"[BoxConnector] S3 upload error: {s3_err}")
+
+            # Extract content if possible using LlamaParse
+            if file_ext.lower() in self.EXTRACTABLE_TYPES and file_bytes:
+                print(f"[BoxConnector] {file_name} is extractable type, parsing with LlamaParse...")
+                try:
+                    from services.document_parser import get_document_parser
+                    parser = get_document_parser()
+
+                    if parser.is_supported(f".{file_ext.lstrip('.')}"):
+                        content = await parser.parse_bytes(
+                            file_bytes=file_bytes,
+                            file_name=file_name,
+                            file_extension=file_ext.lstrip('.')
+                        )
+                        print(f"[BoxConnector] Extracted {len(content)} chars")
+                    else:
+                        print(f"[BoxConnector] Unsupported file type: {file_ext}")
+
                 except Exception as extract_err:
-                    print(f"[BoxConnector] {file_name} extraction error: {extract_err}")
-                    content = ""  # Continue without content
-            else:
-                print(f"[BoxConnector] {file_name} ext {file_ext} not in EXTRACTABLE_TYPES, skipping content extraction")
+                    print(f"[BoxConnector] Content extraction error: {extract_err}")
+                    content = ""
+            elif file_ext.lower() not in self.EXTRACTABLE_TYPES:
+                print(f"[BoxConnector] {file_name} ext {file_ext} not in EXTRACTABLE_TYPES")
 
             # Build metadata
             metadata = {
@@ -626,6 +707,9 @@ class BoxConnector(BaseConnector):
                 "extension": file_ext.lstrip('.') if file_ext else None,
                 "path": full_path,
             }
+
+            if file_url:
+                metadata['file_url'] = file_url
 
             # Parse timestamps
             created_at = getattr(file_obj, 'created_at', None)

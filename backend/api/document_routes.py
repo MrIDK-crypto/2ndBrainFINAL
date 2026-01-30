@@ -15,6 +15,14 @@ from services.auth_service import require_auth
 from services.classification_service import ClassificationService
 from services.embedding_service import get_embedding_service
 
+# Import S3 service
+try:
+    from services.s3_service import get_s3_service
+    S3_AVAILABLE = True
+except ImportError:
+    S3_AVAILABLE = False
+    print("⚠ S3 service not available - files will not be uploaded to cloud storage")
+
 
 # Create blueprint
 document_bp = Blueprint('documents', __name__, url_prefix='/api/documents')
@@ -294,7 +302,37 @@ def upload_documents():
                             parsing_errors.append(error_msg)
                             continue
 
+                        # Upload original file to S3 if available
+                        file_url = None
+                        if S3_AVAILABLE:
+                            try:
+                                s3_service = get_s3_service()
+                                s3_key = s3_service.generate_s3_key(
+                                    tenant_id=g.tenant_id,
+                                    file_type='documents',
+                                    filename=filename
+                                )
+                                file_url, s3_error = s3_service.upload_bytes(
+                                    file_bytes=file_content,
+                                    s3_key=s3_key,
+                                    content_type=file.content_type
+                                )
+                                if file_url:
+                                    print(f"[Upload] File uploaded to S3: {file_url}")
+                                else:
+                                    print(f"[Upload] S3 upload failed: {s3_error}")
+                            except Exception as e:
+                                print(f"[Upload] S3 error: {e}")
+
                         # Create document
+                        metadata = {
+                            'filename': filename,
+                            'uploaded_by': g.user_id,
+                            'file_size': len(file_content)
+                        }
+                        if file_url:
+                            metadata['file_url'] = file_url
+
                         doc = Document(
                             tenant_id=g.tenant_id,
                             title=filename,
@@ -302,11 +340,7 @@ def upload_documents():
                             source_type='manual_upload',
                             classification=DocumentClassification.UNKNOWN,
                             status=DocumentStatus.PENDING,
-                            doc_metadata={
-                                'filename': filename,
-                                'uploaded_by': g.user_id,
-                                'file_size': len(file_content)
-                            }
+                            doc_metadata=metadata
                         )
                         db.add(doc)
                         db.flush()
