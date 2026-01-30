@@ -335,23 +335,43 @@ python -m spacy download en_core_web_sm
 
 ---
 
-### 3. SECURITY - Multi-Tenant Header Spoofing
-**Status:** 🔴 CRITICAL - UNFIXED
-**Location:** Multiple endpoints in `api/` routes
+### ~~3. SECURITY - Multi-Tenant Header Spoofing~~
+**Status:** ✅ FIXED - 2026-01-29
+**Location:** `app_v2.py`, `middleware/rate_limit.py`, `tests/test_tenant_isolation.py`
 
-**Problem:**
+**Problem (was):**
 ```python
 tenant_id = payload.get("tenant_id")  # From JWT ✅
 if not tenant_id:
     tenant_id = request.headers.get("X-Tenant")  # ❌ SPOOFABLE
 ```
 
-**Attack Vector:**
+**Attack Vector (was):**
 ```bash
 curl -H "X-Tenant: victim-tenant-id" /api/documents
 ```
 
-**Fix Required:** Remove X-Tenant header fallback or validate against JWT
+**Fix Applied:**
+1. ✅ Removed X-Tenant header fallback from `app_v2.py`
+2. ✅ Removed X-Tenant from CORS allowed headers
+3. ✅ Added comprehensive tenant isolation tests (`tests/test_tenant_isolation.py`)
+4. ✅ Implemented per-tenant rate limiting (`middleware/rate_limit.py`)
+5. ✅ Added tier-based rate limits (Free, Starter, Professional, Enterprise)
+
+**Security Enhancements:**
+- JWT-only authentication (no header spoofing possible)
+- Rate limiting per tenant (prevent abuse)
+- Comprehensive test coverage (11 security tests)
+- Tests cover: JWT validation, document isolation, gap isolation, connector isolation, attack scenarios
+
+**Files Created:**
+- `middleware/rate_limit.py` - Rate limiting middleware with tier-based limits
+- `middleware/__init__.py` - Middleware module exports
+- `tests/test_tenant_isolation.py` - 11 security tests for multi-tenant isolation
+- `tests/__init__.py` - Tests module init
+
+**Files Modified:**
+- `app_v2.py` - Removed X-Tenant fallback, updated CORS headers
 
 ---
 

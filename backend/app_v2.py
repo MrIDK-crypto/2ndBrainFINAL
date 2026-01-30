@@ -34,7 +34,7 @@ CORS(app,
          r"/api/*": {
              "origins": ["http://localhost:3000", "http://localhost:3006", "*"],
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-             "allow_headers": ["Content-Type", "Authorization", "X-Tenant"]
+             "allow_headers": ["Content-Type", "Authorization"]
          }
      })
 
@@ -238,15 +238,11 @@ def search():
             tenant_id = payload.get("tenant_id")
             print(f"[SEARCH] Tenant from JWT: {tenant_id}", flush=True)
 
-    # Fallback to X-Tenant header (TODO: Remove for security)
-    if not tenant_id:
-        tenant_id = request.headers.get("X-Tenant")
-        print(f"[SEARCH] Tenant from header: {tenant_id}", flush=True)
-
+    # Security: ONLY allow tenant_id from JWT, never from headers
     if not tenant_id:
         return jsonify({
             "success": False,
-            "error": "Authentication required"
+            "error": "Authentication required. Valid JWT token must be provided."
         }), 401
 
     data = request.get_json() or {}
