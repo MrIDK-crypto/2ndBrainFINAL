@@ -329,12 +329,39 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'flex-end',
+            justifyContent: 'space-between',
             padding: '16px 24px',
             borderTop: '1px solid #081028',
             backgroundColor: '#FFE2BF'
           }}
         >
+          <div style={{ display: 'flex', gap: '12px' }}>
+            {/* Download Original File button - only show if file_url exists */}
+            {document.metadata?.file_url && (
+              <a
+                href={document.metadata.file_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  padding: '10px 24px',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  borderRadius: '4px',
+                  backgroundColor: '#05C168',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: '"Work Sans", sans-serif',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  textDecoration: 'none'
+                }}
+              >
+                Download Original File
+              </a>
+            )}
+          </div>
           <button
             onClick={onClose}
             style={{
