@@ -28,6 +28,19 @@ export default function KnowledgeGaps() {
   const [isListening, setIsListening] = useState(false)
   const [isTranscribing, setIsTranscribing] = useState(false)
 
+  // Video generation state
+  const [showVideoModal, setShowVideoModal] = useState(false)
+  const [videoTitle, setVideoTitle] = useState('')
+  const [videoDescription, setVideoDescription] = useState('')
+  const [includeAnswers, setIncludeAnswers] = useState(true)
+  const [generatingVideo, setGeneratingVideo] = useState(false)
+  const [videoProgress, setVideoProgress] = useState<{
+    status: string
+    progress_percent: number
+    current_step: string
+  } | null>(null)
+  const [createdVideoId, setCreatedVideoId] = useState<string | null>(null)
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const authHeaders = useAuthHeaders()
@@ -192,6 +205,108 @@ export default function KnowledgeGaps() {
     else startRecording()
   }
 
+  // Video generation functions
+  const handleGenerateTrainingVideo = () => {
+    if (gaps.length === 0) {
+      alert('No knowledge gaps available. Please analyze documents first.')
+      return
+    }
+    setVideoTitle('')
+    setVideoDescription('')
+    setIncludeAnswers(true)
+    setShowVideoModal(true)
+  }
+
+  const createTrainingVideo = async () => {
+    if (!videoTitle.trim()) {
+      alert('Please enter a video title')
+      return
+    }
+
+    if (gaps.length === 0) {
+      alert('No knowledge gaps available')
+      return
+    }
+
+    setGeneratingVideo(true)
+    try {
+      // Get actual gap IDs from the backend format
+      const gapIds = gaps.map(g => {
+        // If the ID contains an underscore, it's a question index - extract the original gap ID
+        const gapId = g.id.includes('_') ? g.id.split('_')[0] : g.id
+        return gapId
+      }).filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
+
+      const response = await axios.post(
+        `${API_BASE}/videos`,
+        {
+          title: videoTitle,
+          description: videoDescription || undefined,
+          source_type: 'knowledge_gaps',
+          source_ids: gapIds,
+          include_answers: includeAnswers
+        },
+        { headers: authHeaders }
+      )
+
+      if (response.data.success) {
+        const videoId = response.data.video.id
+        setCreatedVideoId(videoId)
+
+        // Start polling for progress
+        pollVideoStatus(videoId)
+      } else {
+        alert('Failed to create video: ' + (response.data.error || 'Unknown error'))
+        setGeneratingVideo(false)
+      }
+    } catch (error: any) {
+      console.error('Error creating training video:', error)
+      alert('Failed to create video: ' + (error.response?.data?.error || error.message))
+      setGeneratingVideo(false)
+    }
+  }
+
+  const pollVideoStatus = async (videoId: string) => {
+    try {
+      const response = await axios.get(
+        `${API_BASE}/videos/${videoId}/status`,
+        { headers: authHeaders }
+      )
+
+      if (response.data.success) {
+        const status = response.data.status
+        setVideoProgress({
+          status: status.status,
+          progress_percent: status.progress_percent || 0,
+          current_step: status.current_step || 'Processing...'
+        })
+
+        if (status.status === 'completed') {
+          // Video is ready!
+          setTimeout(() => {
+            setGeneratingVideo(false)
+            setShowVideoModal(false)
+            setVideoProgress(null)
+            setCreatedVideoId(null)
+            alert('Training video generated successfully! Redirecting to Training Guides...')
+            window.location.href = '/training-guides'
+          }, 1500)
+        } else if (status.status === 'failed') {
+          setGeneratingVideo(false)
+          setVideoProgress(null)
+          alert('Video generation failed: ' + (status.error_message || 'Unknown error'))
+        } else {
+          // Still processing, poll again in 3 seconds
+          setTimeout(() => pollVideoStatus(videoId), 3000)
+        }
+      }
+    } catch (error: any) {
+      console.error('Error polling video status:', error)
+      // Retry after 3 seconds
+      setTimeout(() => pollVideoStatus(videoId), 3000)
+    }
+  }
+
   // Filter gaps
   const filteredGaps = gaps.filter(g => {
     if (filter === 'unanswered' && g.answered) return false
@@ -230,27 +345,51 @@ export default function KnowledgeGaps() {
               </p>
             </div>
 
-            <button
-              onClick={generateQuestions}
-              disabled={generating}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 18px',
-                borderRadius: '8px',
-                backgroundColor: '#081028',
-                color: 'white',
-                border: 'none',
-                fontFamily: '"Work Sans", sans-serif',
-                fontSize: '14px',
-                fontWeight: 500,
-                cursor: generating ? 'not-allowed' : 'pointer',
-                opacity: generating ? 0.7 : 1
-              }}
-            >
-              {generating ? 'Analyzing...' : 'Analyze Documents'}
-            </button>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={handleGenerateTrainingVideo}
+                disabled={gaps.length === 0}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  backgroundColor: gaps.length === 0 ? '#ccc' : '#FF6B35',
+                  color: 'white',
+                  border: 'none',
+                  fontFamily: '"Work Sans", sans-serif',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: gaps.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: gaps.length === 0 ? 0.6 : 1
+                }}
+              >
+                🎬 Generate Training Video
+              </button>
+
+              <button
+                onClick={generateQuestions}
+                disabled={generating}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  backgroundColor: '#081028',
+                  color: 'white',
+                  border: 'none',
+                  fontFamily: '"Work Sans", sans-serif',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: generating ? 'not-allowed' : 'pointer',
+                  opacity: generating ? 0.7 : 1
+                }}
+              >
+                {generating ? 'Analyzing...' : 'Analyze Documents'}
+              </button>
+            </div>
           </div>
 
           {/* Progress bar */}
@@ -540,6 +679,327 @@ export default function KnowledgeGaps() {
           )}
         </div>
       </div>
+
+      {/* Video Generation Modal */}
+      {showVideoModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}
+          onClick={() => !generatingVideo && setShowVideoModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: '12px',
+              padding: '32px',
+              maxWidth: '600px',
+              width: '90%',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {!generatingVideo ? (
+              <>
+                <h2 style={{
+                  fontFamily: '"Work Sans", sans-serif',
+                  fontSize: '24px',
+                  fontWeight: 600,
+                  marginBottom: '8px',
+                  color: '#081028'
+                }}>
+                  🎬 Generate Training Video
+                </h2>
+
+                <p style={{
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: '14px',
+                  color: '#71717A',
+                  marginBottom: '24px'
+                }}>
+                  Create an AI-powered training video from {gaps.length} knowledge gap(s) with Q&A format using Gamma AI
+                </p>
+
+                {/* Video Title */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#081028'
+                  }}>
+                    Video Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={videoTitle}
+                    onChange={e => setVideoTitle(e.target.value)}
+                    placeholder="e.g., Knowledge Transfer - Q&A Session"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid #D4D4D8',
+                      fontSize: '14px',
+                      fontFamily: 'Inter, sans-serif'
+                    }}
+                  />
+                </div>
+
+                {/* Video Description */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#081028'
+                  }}>
+                    Description (Optional)
+                  </label>
+                  <textarea
+                    value={videoDescription}
+                    onChange={e => setVideoDescription(e.target.value)}
+                    placeholder="Brief description of this knowledge transfer session..."
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid #D4D4D8',
+                      fontSize: '14px',
+                      fontFamily: 'Inter, sans-serif',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+
+                {/* Include Answers Toggle */}
+                <div style={{
+                  marginBottom: '24px',
+                  padding: '16px',
+                  backgroundColor: '#F9FAFB',
+                  borderRadius: '8px',
+                  border: '1px solid #E5E7EB'
+                }}>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    cursor: 'pointer'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={includeAnswers}
+                      onChange={e => setIncludeAnswers(e.target.checked)}
+                      style={{
+                        width: '18px',
+                        height: '18px',
+                        cursor: 'pointer'
+                      }}
+                    />
+                    <div>
+                      <p style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        color: '#081028',
+                        margin: 0
+                      }}>
+                        Include answers in video
+                      </p>
+                      <p style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontSize: '12px',
+                        color: '#6B7280',
+                        margin: '4px 0 0 0'
+                      }}>
+                        Video will show both questions and their answers. Uncheck for questions-only format.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Knowledge Gaps Summary */}
+                <div style={{
+                  marginBottom: '24px',
+                  padding: '16px',
+                  backgroundColor: '#F9FAFB',
+                  borderRadius: '8px',
+                  border: '1px solid #E5E7EB'
+                }}>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    marginBottom: '8px',
+                    color: '#081028'
+                  }}>
+                    Content Summary:
+                  </p>
+                  <div style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '12px',
+                    color: '#6B7280'
+                  }}>
+                    <p style={{ margin: '4px 0' }}>Total Questions: {gaps.length}</p>
+                    <p style={{ margin: '4px 0' }}>Answered: {totalAnswered}</p>
+                    <p style={{ margin: '4px 0' }}>Unanswered: {totalPending}</p>
+                  </div>
+                </div>
+
+                {/* Info Box */}
+                <div style={{
+                  padding: '12px 16px',
+                  backgroundColor: '#FFF7ED',
+                  border: '1px solid #FDBA74',
+                  borderRadius: '8px',
+                  marginBottom: '24px'
+                }}>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '12px',
+                    color: '#9A3412',
+                    margin: 0
+                  }}>
+                    ⚡ Gamma AI will create a Q&A format presentation with professional design and narration. This typically takes 3-5 minutes.
+                  </p>
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowVideoModal(false)}
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: '8px',
+                      border: '1px solid #D4D4D8',
+                      backgroundColor: '#FFFFFF',
+                      color: '#081028',
+                      fontFamily: '"Work Sans", sans-serif',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={createTrainingVideo}
+                    disabled={!videoTitle.trim()}
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: !videoTitle.trim() ? '#ccc' : '#FF6B35',
+                      color: '#FFFFFF',
+                      fontFamily: '"Work Sans", sans-serif',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: !videoTitle.trim() ? 'not-allowed' : 'pointer',
+                      opacity: !videoTitle.trim() ? 0.6 : 1
+                    }}
+                  >
+                    Generate Video
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* Video Generation Progress */
+              <div style={{ textAlign: 'center', padding: '20px' }}>
+                <div style={{
+                  width: '80px',
+                  height: '80px',
+                  margin: '0 auto 24px',
+                  borderRadius: '50%',
+                  border: '4px solid #FFE2BF',
+                  borderTop: '4px solid #FF6B35',
+                  animation: 'spin 1s linear infinite'
+                }}>
+                  <style jsx>{`
+                    @keyframes spin {
+                      0% { transform: rotate(0deg); }
+                      100% { transform: rotate(360deg); }
+                    }
+                  `}</style>
+                </div>
+
+                <h3 style={{
+                  fontFamily: '"Work Sans", sans-serif',
+                  fontSize: '20px',
+                  fontWeight: 600,
+                  marginBottom: '12px',
+                  color: '#081028'
+                }}>
+                  Generating Training Video...
+                </h3>
+
+                {videoProgress && (
+                  <>
+                    <p style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '14px',
+                      color: '#6B7280',
+                      marginBottom: '16px'
+                    }}>
+                      {videoProgress.current_step}
+                    </p>
+
+                    {/* Progress Bar */}
+                    <div style={{
+                      width: '100%',
+                      height: '8px',
+                      backgroundColor: '#E5E7EB',
+                      borderRadius: '4px',
+                      overflow: 'hidden',
+                      marginBottom: '8px'
+                    }}>
+                      <div style={{
+                        width: `${videoProgress.progress_percent}%`,
+                        height: '100%',
+                        backgroundColor: '#FF6B35',
+                        transition: 'width 0.3s ease'
+                      }} />
+                    </div>
+
+                    <p style={{
+                      fontFamily: '"Work Sans", sans-serif',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: '#081028'
+                    }}>
+                      {videoProgress.progress_percent}% Complete
+                    </p>
+                  </>
+                )}
+
+                <p style={{
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: '12px',
+                  color: '#9CA3AF',
+                  marginTop: '24px'
+                }}>
+                  This may take a few minutes. Please don't close this window.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
