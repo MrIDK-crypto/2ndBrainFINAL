@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Sidebar from '../shared/Sidebar'
 import Image from 'next/image'
 import axios from 'axios'
@@ -2475,7 +2475,9 @@ export default function Integrations() {
   // Sync progress state
   const [showSyncProgress, setShowSyncProgress] = useState(false)
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
-  const [syncPollingInterval, setSyncPollingInterval] = useState<NodeJS.Timeout | null>(null)
+  // CRITICAL FIX: Use useRef instead of useState to avoid closure issues
+  // useState causes the setInterval callback to capture stale state values
+  const syncPollingInterval = useRef<NodeJS.Timeout | null>(null)
 
   // Integration details modal state
   const [showDetailsModal, setShowDetailsModal] = useState(false)
@@ -2531,8 +2533,9 @@ export default function Integrations() {
 
     // CRITICAL: Cleanup function to stop polling when component unmounts
     return () => {
-      if (syncPollingInterval) {
-        clearInterval(syncPollingInterval)
+      if (syncPollingInterval.current) {
+        clearInterval(syncPollingInterval.current)
+        syncPollingInterval.current = null
       }
     }
   }, [])
@@ -2747,7 +2750,7 @@ export default function Integrations() {
 
   // Poll for sync status
   const pollSyncStatus = async (integrationId: string) => {
-    console.log('[DEBUG] pollSyncStatus called for:', integrationId, 'interval:', syncPollingInterval)
+    console.log('[DEBUG] pollSyncStatus called for:', integrationId, 'interval:', syncPollingInterval.current)
     const token = getAuthToken()
     if (!token) return
 
@@ -2771,9 +2774,9 @@ export default function Integrations() {
 
         // Stop polling if completed or error, but keep the completed state visible
         if (status.status === 'completed' || status.status === 'error') {
-          if (syncPollingInterval) {
-            clearInterval(syncPollingInterval)
-            setSyncPollingInterval(null)
+          if (syncPollingInterval.current) {
+            clearInterval(syncPollingInterval.current)
+            syncPollingInterval.current = null
           }
 
           // If completed, ensure integration is marked as connected
@@ -2833,10 +2836,9 @@ export default function Integrations() {
 
       if (response.data.success) {
         // Start polling for status
-        const interval = setInterval(() => pollSyncStatus(integrationId), 2000)
-        console.log('[DEBUG] Created new polling interval:', interval)
-        setSyncPollingInterval(interval)
-        console.log('[DEBUG] Polling interval stored in state')
+        syncPollingInterval.current = setInterval(() => pollSyncStatus(integrationId), 2000)
+        console.log('[DEBUG] Created new polling interval:', syncPollingInterval.current)
+        console.log('[DEBUG] Polling interval stored in ref')
       } else {
         saveSyncState(null) // Clear saved state on error
         setSyncProgress(prev => prev ? {
@@ -2858,13 +2860,13 @@ export default function Integrations() {
 
   // Minimize sync progress modal - ALWAYS stop polling to prevent infinite loop
   const minimizeSyncProgress = () => {
-    console.log('[DEBUG] minimizeSyncProgress called, syncPollingInterval:', syncPollingInterval)
+    console.log('[DEBUG] minimizeSyncProgress called, syncPollingInterval:', syncPollingInterval.current)
     setShowSyncProgress(false)
     // CRITICAL FIX: Stop polling when minimizing to prevent infinite requests
-    if (syncPollingInterval) {
-      console.log('[DEBUG] Clearing interval:', syncPollingInterval)
-      clearInterval(syncPollingInterval)
-      setSyncPollingInterval(null)
+    if (syncPollingInterval.current) {
+      console.log('[DEBUG] Clearing interval:', syncPollingInterval.current)
+      clearInterval(syncPollingInterval.current)
+      syncPollingInterval.current = null
       console.log('[DEBUG] Interval cleared and set to null')
     } else {
       console.log('[DEBUG] WARNING: syncPollingInterval is null/undefined, nothing to clear!')
@@ -2877,9 +2879,9 @@ export default function Integrations() {
     setShowSyncProgress(false)
     // Don't clear syncProgress or saved state - keep it for next time modal opens
     // State will only be cleared when a new sync starts
-    if (syncPollingInterval) {
-      clearInterval(syncPollingInterval)
-      setSyncPollingInterval(null)
+    if (syncPollingInterval.current) {
+      clearInterval(syncPollingInterval.current)
+      syncPollingInterval.current = null
     }
   }
 
@@ -2895,9 +2897,9 @@ export default function Integrations() {
   // Cancel sync - stop polling and reset state
   const cancelSync = () => {
     // Stop polling immediately
-    if (syncPollingInterval) {
-      clearInterval(syncPollingInterval)
-      setSyncPollingInterval(null)
+    if (syncPollingInterval.current) {
+      clearInterval(syncPollingInterval.current)
+      syncPollingInterval.current = null
     }
 
     // Clear saved state
