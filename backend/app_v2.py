@@ -195,11 +195,27 @@ def root():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
-    return jsonify({
+    """
+    Enhanced health check endpoint.
+
+    Checks:
+    - Database connectivity (required)
+    - Pinecone availability (optional, if CHECK_PINECONE=true)
+    - Azure OpenAI availability (optional, if CHECK_AZURE_OPENAI=true)
+
+    Used by Render for health monitoring.
+    Returns 200 if healthy, 503 if critical services fail.
+    """
+    from utils.logger import log_warning
+    from sqlalchemy import text
+    import time
+
+    start_time = time.time()
+    health_status = {
         "status": "healthy",
         "version": "2.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": {},
         "features": {
             "auth": True,
             "integrations": True,
@@ -208,7 +224,48 @@ def health_check():
             "video_generation": True,
             "rag_search": AZURE_OPENAI_API_KEY is not None
         }
-    })
+    }
+
+    # 1. Database check (CRITICAL)
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        health_status["checks"]["database"] = "ok"
+    except Exception as e:
+        health_status["checks"]["database"] = f"error: {str(e)}"
+        health_status["status"] = "unhealthy"
+        log_warning("HealthCheck", "Database check failed", error=str(e))
+
+    # 2. Pinecone check (optional - can be slow)
+    if os.getenv("CHECK_PINECONE") == "true":
+        try:
+            from vector_stores.pinecone_store import PineconeVectorStore
+            store = PineconeVectorStore()
+            store.index.describe_index_stats()
+            health_status["checks"]["pinecone"] = "ok"
+        except Exception as e:
+            health_status["checks"]["pinecone"] = f"warning: {str(e)}"
+            log_warning("HealthCheck", "Pinecone check failed", error=str(e))
+
+    # 3. Azure OpenAI check (optional - only if critical)
+    if os.getenv("CHECK_AZURE_OPENAI") == "true":
+        try:
+            from azure_openai_config import get_azure_client
+            client = get_azure_client()
+            # Simple check - just verify client exists
+            health_status["checks"]["azure_openai"] = "ok" if client else "warning: no client"
+        except Exception as e:
+            health_status["checks"]["azure_openai"] = f"warning: {str(e)}"
+            log_warning("HealthCheck", "Azure OpenAI check failed", error=str(e))
+
+    # Response time
+    health_status["response_time_ms"] = round((time.time() - start_time) * 1000, 2)
+
+    # Return 200 if healthy, 503 if unhealthy
+    status_code = 200 if health_status["status"] == "healthy" else 503
+
+    return jsonify(health_status), status_code
 
 # ============================================================================
 # SEARCH ENDPOINT (Enhanced RAG with Reranking, MMR, Query Expansion)

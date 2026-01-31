@@ -456,3 +456,179 @@ Date: {date_str}
         if match:
             return match.group(1).strip()
         return email_header.split('@')[0] if '@' in email_header else email_header
+
+    # ========================================================================
+    # PUSH NOTIFICATIONS (Optional - Requires Google Cloud Pub/Sub)
+    # ========================================================================
+
+    async def setup_push_notifications(self, topic_name: str) -> Optional[str]:
+        """
+        Set up Gmail push notifications via Google Cloud Pub/Sub.
+
+        This enables real-time sync instead of polling.
+
+        Args:
+            topic_name: Full topic name in format:
+                       "projects/YOUR_PROJECT_ID/topics/gmail-notifications"
+
+        Returns:
+            history_id if successful, None if failed
+
+        Note:
+            - Requires Google Cloud Pub/Sub topic setup
+            - Free tier: 10GB/month
+            - Watch expires after 7 days (need to renew)
+            - See: https://developers.google.com/gmail/api/guides/push
+
+        Setup:
+            1. Create GCP project
+            2. Enable Gmail API and Pub/Sub API
+            3. Create Pub/Sub topic: gmail-notifications
+            4. Grant Gmail publish permission:
+               gcloud pubsub topics add-iam-policy-binding gmail-notifications \
+                   --member=serviceAccount:gmail-api-push@system.gserviceaccount.com \
+                   --role=roles/pubsub.publisher
+            5. Create subscription pointing to your webhook endpoint
+        """
+        if not self.service:
+            await self.connect()
+
+        try:
+            from utils.logger import log_info, log_error
+
+            # Create watch request
+            request_body = {
+                'labelIds': ['INBOX', 'SENT'],  # Watch these labels
+                'topicName': topic_name
+            }
+
+            log_info("GmailConnector", "Setting up push notifications", topic=topic_name)
+
+            response = self.service.users().watch(
+                userId='me',
+                body=request_body
+            ).execute()
+
+            history_id = response.get('historyId')
+            expiration = response.get('expiration')  # Unix timestamp in milliseconds
+
+            log_info("GmailConnector", "Push notifications enabled",
+                    history_id=history_id, expiration=expiration)
+
+            return history_id
+
+        except HttpError as e:
+            from utils.logger import log_error
+            log_error("GmailConnector", "Failed to set up push notifications", error=e)
+            return None
+        except Exception as e:
+            from utils.logger import log_error
+            log_error("GmailConnector", "Push setup error", error=e)
+            return None
+
+    async def handle_push_notification(self, history_id: str) -> List[Document]:
+        """
+        Handle Gmail push notification by fetching new emails since history_id.
+
+        This is called when Pub/Sub delivers a notification to your webhook.
+
+        Args:
+            history_id: Starting history ID from notification
+
+        Returns:
+            List of new documents
+
+        Example webhook handler:
+            @app.route('/api/gmail/webhook', methods=['POST'])
+            def gmail_webhook():
+                data = request.get_json()
+                message = base64.b64decode(data['message']['data'])
+                notification = json.loads(message)
+                history_id = notification['historyId']
+
+                # Process new emails
+                connector = GmailConnector(config)
+                docs = await connector.handle_push_notification(history_id)
+
+                return jsonify({'status': 'ok', 'processed': len(docs)})
+        """
+        if not self.service:
+            await self.connect()
+
+        try:
+            from utils.logger import log_info
+
+            log_info("GmailConnector", "Processing push notification", history_id=history_id)
+
+            # Fetch history changes since history_id
+            response = self.service.users().history().list(
+                userId='me',
+                startHistoryId=history_id,
+                historyTypes=['messageAdded'],  # Only new messages
+                maxResults=500
+            ).execute()
+
+            documents = []
+            history = response.get('history', [])
+
+            log_info("GmailConnector", "History entries retrieved", count=len(history))
+
+            # Extract message IDs from history
+            message_ids = []
+            for record in history:
+                for msg in record.get('messagesAdded', []):
+                    message_ids.append(msg['message']['id'])
+
+            # Fetch and process each new message
+            for msg_id in message_ids:
+                try:
+                    message = self.service.users().messages().get(
+                        userId='me',
+                        id=msg_id,
+                        format='full'
+                    ).execute()
+
+                    doc = await self._message_to_document(message)
+                    if doc:
+                        documents.append(doc)
+
+                except Exception as msg_err:
+                    from utils.logger import log_error
+                    log_error("GmailConnector", "Failed to process message", error=msg_err, msg_id=msg_id)
+
+            log_info("GmailConnector", "Push notification processed", new_emails=len(documents))
+
+            return documents
+
+        except HttpError as e:
+            from utils.logger import log_error
+            log_error("GmailConnector", "Push notification handling failed", error=e)
+            return []
+        except Exception as e:
+            from utils.logger import log_error
+            log_error("GmailConnector", "Push handling error", error=e)
+            return []
+
+    async def stop_push_notifications(self) -> bool:
+        """
+        Stop Gmail push notifications (stop watch).
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.service:
+            await self.connect()
+
+        try:
+            from utils.logger import log_info
+
+            self.service.users().stop(userId='me').execute()
+
+            log_info("GmailConnector", "Push notifications stopped")
+
+            return True
+
+        except Exception as e:
+            from utils.logger import log_error
+            log_error("GmailConnector", "Failed to stop push notifications", error=e)
+            return False

@@ -13,6 +13,7 @@ from pathlib import Path
 import mimetypes
 
 from .base_connector import BaseConnector, ConnectorConfig, ConnectorStatus, Document
+from utils.logger import log_info, log_error, log_warning
 
 # S3 Service for file storage
 try:
@@ -574,30 +575,57 @@ class BoxConnector(BaseConnector):
             # Get full file info
             file_obj = self.client.files.get_file_by_id(file_id)
 
-            # Check modified date - but be lenient for initial syncs
-            # Only skip if file is MUCH older than since date (more than 30 days)
+            # === INCREMENTAL SYNC: CHECK IF FILE UNCHANGED ===
+            # Check if document already exists with same sha1 hash
+            from database.models import SessionLocal, Document as DBDocument
+            db = SessionLocal()
+            try:
+                existing_doc = db.query(DBDocument).filter(
+                    DBDocument.tenant_id == self.config.tenant_id,
+                    DBDocument.external_id == f"box_{file_id}"
+                ).first()
+
+                if existing_doc:
+                    # Check sha1 hash
+                    existing_sha1 = existing_doc.doc_metadata.get('sha1') if existing_doc.doc_metadata else None
+                    current_sha1 = getattr(file_obj, 'sha1', None)
+
+                    if existing_sha1 and current_sha1 and existing_sha1 == current_sha1:
+                        log_info("BoxConnector", "File unchanged (sha1 match), skipping",
+                                file_name=file_name, file_id=file_id)
+                        return None  # Skip unchanged file
+                    elif current_sha1:
+                        log_info("BoxConnector", "File modified (sha1 changed), re-processing",
+                                file_name=file_name, old_sha1=existing_sha1[:8], new_sha1=current_sha1[:8])
+                    else:
+                        log_warning("BoxConnector", "File has no sha1, processing anyway", file_name=file_name)
+            finally:
+                db.close()
+            # === END INCREMENTAL SYNC ===
+
+            # Check modified date (secondary check for files without sha1)
             if since:
                 modified_at = file_obj.modified_at
                 if isinstance(modified_at, str):
                     modified_at = datetime.fromisoformat(modified_at.replace('Z', '+00:00'))
-                # Ensure both datetimes are timezone-aware for comparison
+
                 if modified_at:
-                    # Make since timezone-aware if it's naive
+                    # Make both timezone-aware
                     since_aware = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
-                    # Make modified_at timezone-aware if it's naive
                     if modified_at.tzinfo is None:
                         modified_at = modified_at.replace(tzinfo=timezone.utc)
 
-                    # For incremental syncs, only skip files older than since date
-                    # But for initial/reconnect syncs, we should include all files
-                    # The since parameter from last_sync might be stale after reconnection
-                    # So we skip the date filter entirely for now - get ALL files
-                    # The database will handle deduplication via doc_id
-                    print(f"[BoxConnector] File {file_name}: modified_at={modified_at}, since={since_aware} (not filtering by date)")
+                    # Only skip if file is older than since AND we already have it
+                    # This handles files without sha1 hash
+                    if modified_at < since_aware and existing_doc:
+                        log_info("BoxConnector", "File older than last sync, skipping",
+                                file_name=file_name, modified_at=modified_at, since=since_aware)
+                        return None
 
             # Check file size
             if file_obj.size and file_obj.size > max_file_size:
-                print(f"[BoxConnector] File {file_name} skipped: size {file_obj.size} > max {max_file_size}")
+                log_warning("BoxConnector", "File exceeds size limit, skipping",
+                           file_name=file_name, size=file_obj.size, max_size=max_file_size)
                 return None
 
             # Check file extension
@@ -605,12 +633,13 @@ class BoxConnector(BaseConnector):
             if "." in file_name:
                 file_ext = "." + file_name.rsplit(".", 1)[-1]
             if file_extensions and file_ext.lower() not in [e.lower() for e in file_extensions]:
-                print(f"[BoxConnector] File {file_name} skipped: extension {file_ext} not in {file_extensions}")
+                log_info("BoxConnector", "File extension not in allowed list, skipping",
+                        file_name=file_name, extension=file_ext)
                 return None
 
             # Build path
             full_path = f"{folder_path}/{file_name}"
-            print(f"[BoxConnector] Processing {file_name}: ext={file_ext}, path={full_path}")
+            log_info("BoxConnector", "Processing file", file_name=file_name, extension=file_ext, path=full_path)
 
             # Download file once from Box (for both S3 and content extraction)
             file_bytes = None
@@ -622,7 +651,7 @@ class BoxConnector(BaseConnector):
 
             if should_download:
                 try:
-                    print(f"[BoxConnector] Downloading {file_name}...")
+                    log_info("BoxConnector", "Downloading file", file_name=file_name, file_id=file_id)
 
                     if BOX_SDK_VERSION == "new":
                         content_stream = self.client.downloads.download_file(file_id)
@@ -638,12 +667,12 @@ class BoxConnector(BaseConnector):
                         file_bytes = content_stream.read()
 
                     if file_bytes:
-                        print(f"[BoxConnector] Downloaded {len(file_bytes)} bytes")
+                        log_info("BoxConnector", "Download complete", file_name=file_name, bytes=len(file_bytes))
                     else:
-                        print(f"[BoxConnector] Empty file content for {file_id}")
+                        log_warning("BoxConnector", "Empty file content", file_id=file_id)
 
                 except Exception as download_err:
-                    print(f"[BoxConnector] Download error for {file_name}: {download_err}")
+                    log_error("BoxConnector", "Download failed", error=download_err, file_name=file_name)
                     file_bytes = None
 
             # Upload to S3 if available
@@ -669,16 +698,16 @@ class BoxConnector(BaseConnector):
                     )
 
                     if file_url:
-                        print(f"[BoxConnector] ✓ Uploaded to S3: {file_url}")
+                        log_info("BoxConnector", "Uploaded to S3", file_name=file_name, url=file_url)
                     else:
-                        print(f"[BoxConnector] S3 upload failed: {s3_error}")
+                        log_error("BoxConnector", "S3 upload failed", error=s3_error, file_name=file_name)
 
                 except Exception as s3_err:
-                    print(f"[BoxConnector] S3 upload error: {s3_err}")
+                    log_error("BoxConnector", "S3 upload error", error=s3_err, file_name=file_name)
 
             # Extract content if possible using LlamaParse
             if file_ext.lower() in self.EXTRACTABLE_TYPES and file_bytes:
-                print(f"[BoxConnector] {file_name} is extractable type, parsing with LlamaParse...")
+                log_info("BoxConnector", "Parsing file with LlamaParse", file_name=file_name, type=file_ext)
                 try:
                     from services.document_parser import get_document_parser
                     parser = get_document_parser()
@@ -689,15 +718,15 @@ class BoxConnector(BaseConnector):
                             file_name=file_name,
                             file_extension=file_ext.lstrip('.')
                         )
-                        print(f"[BoxConnector] Extracted {len(content)} chars")
+                        log_info("BoxConnector", "Content extracted", file_name=file_name, chars=len(content))
                     else:
-                        print(f"[BoxConnector] Unsupported file type: {file_ext}")
+                        log_warning("BoxConnector", "Unsupported file type", file_ext=file_ext)
 
                 except Exception as extract_err:
-                    print(f"[BoxConnector] Content extraction error: {extract_err}")
+                    log_error("BoxConnector", "Content extraction failed", error=extract_err, file_name=file_name)
                     content = ""
             elif file_ext.lower() not in self.EXTRACTABLE_TYPES:
-                print(f"[BoxConnector] {file_name} ext {file_ext} not in EXTRACTABLE_TYPES")
+                log_info("BoxConnector", "File type not extractable", file_name=file_name, extension=file_ext)
 
             # Build metadata
             metadata = {
