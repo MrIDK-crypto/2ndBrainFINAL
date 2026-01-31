@@ -183,12 +183,20 @@ class WebScraperConnector:
         Returns:
             List of ScrapedDocument objects
         """
-        crawler = SimpleWebCrawler(
-            start_url=self.start_url,
-            max_pages=self.max_pages,
-            max_depth=self.max_depth
-        )
+        print(f"[Webscraper] sync() called with start_url={self.start_url}")
 
-        documents = crawler.crawl()
+        try:
+            crawler = SimpleWebCrawler(
+                start_url=self.start_url,
+                max_pages=self.max_pages,
+                max_depth=self.max_depth
+            )
 
-        return documents
+            documents = crawler.crawl()
+
+            return documents
+        except Exception as e:
+            print(f"[Webscraper] ERROR in sync(): {e}")
+            import traceback
+            traceback.print_exc()
+            raise
