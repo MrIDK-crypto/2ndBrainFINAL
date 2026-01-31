@@ -105,10 +105,19 @@ export default function Documents() {
           const classification = doc.classification?.toLowerCase() || ''
           const folderPath = doc.metadata?.folder_path?.toLowerCase() || ''
 
-          console.log(`Doc ${index}: ${doc.title} | source_type: ${sourceType} | classification: ${classification}`)
+          console.log(`Doc ${index}: ${doc.title} | source_type: "${sourceType}" | classification: ${classification}`)
 
-          // Code files (NEW - HIGHEST PRIORITY for code)
-          if (sourceType?.includes('code') ||
+          // Web Scraper documents (HIGHEST PRIORITY - check first)
+          if (sourceType === 'webscraper' ||
+              sourceType === 'webscraper_enhanced' ||
+              sourceType === 'web_scraper' ||
+              sourceType?.toLowerCase().includes('webscraper') ||
+              sourceType?.toLowerCase().includes('web_scraper')) {
+            category = 'Web Scraper'
+            console.log(`  -> Categorized as Web Scraper (source_type: ${sourceType})`)
+          }
+          // Code files
+          else if (sourceType?.includes('code') ||
               title.includes('.js') || title.includes('.ts') || title.includes('.py') ||
               title.includes('.jsx') || title.includes('.tsx') || title.includes('.java') ||
               title.includes('.cpp') || title.includes('.c') || title.includes('.go') ||
@@ -116,10 +125,6 @@ export default function Documents() {
               folderPath?.includes('src/') || folderPath?.includes('code/') ||
               doc.metadata?.file_type === 'code') {
             category = 'Code'
-          }
-          // Web Scraper documents
-          else if (sourceType === 'webscraper' || sourceType === 'webscraper_enhanced' || sourceType?.includes('webscraper')) {
-            category = 'Web Scraper'
           }
           // Backend classification
           else if (classification === 'personal' || classification === 'spam') {
@@ -541,54 +546,56 @@ export default function Documents() {
                 overflow: 'hidden'
               }}
             >
-              {/* Move to submenu */}
-              <div style={{
-                padding: '8px 0',
-                borderBottom: '1px solid #E5E7EB'
-              }}>
+              {/* Move to submenu - only show for non-web-scraper documents */}
+              {doc.category !== 'Web Scraper' && (
                 <div style={{
-                  padding: '8px 16px',
-                  fontFamily: notionFont,
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: '#6B7280',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
+                  padding: '8px 0',
+                  borderBottom: '1px solid #E5E7EB'
                 }}>
-                  Move to
+                  <div style={{
+                    padding: '8px 16px',
+                    fontFamily: notionFont,
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#6B7280',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em'
+                  }}>
+                    Move to
+                  </div>
+                  {['Documents', 'Personal Items', 'Code', 'Other Items'].map((category) => (
+                    <button
+                      key={category}
+                      onClick={() => {
+                        const classificationMap: any = {
+                          'Documents': 'work',
+                          'Personal Items': 'personal',
+                          'Code': 'work',
+                          'Other Items': 'unknown'
+                        }
+                        handleMoveDocument(doc.id, classificationMap[category])
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 16px',
+                        paddingLeft: '32px',
+                        textAlign: 'left',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontFamily: notionFont,
+                        fontSize: '14px',
+                        color: '#374151',
+                        transition: 'background-color 0.15s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F9FAFB'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      {category}
+                    </button>
+                  ))}
                 </div>
-                {['Documents', 'Personal Items', 'Code', 'Other Items'].map((category) => (
-                  <button
-                    key={category}
-                    onClick={() => {
-                      const classificationMap: any = {
-                        'Documents': 'work',
-                        'Personal Items': 'personal',
-                        'Code': 'work',
-                        'Other Items': 'unknown'
-                      }
-                      handleMoveDocument(doc.id, classificationMap[category])
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '8px 16px',
-                      paddingLeft: '32px',
-                      textAlign: 'left',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontFamily: notionFont,
-                      fontSize: '14px',
-                      color: '#374151',
-                      transition: 'background-color 0.15s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F9FAFB'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  >
-                    {category}
-                  </button>
-                ))}
-              </div>
+              )}
 
               {/* Other actions */}
               <div style={{ padding: '4px 0' }}>
