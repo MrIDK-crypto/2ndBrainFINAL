@@ -1739,6 +1739,312 @@ def webscraper_status():
 
 
 # ============================================================================
+# ENHANCED WEB SCRAPER (with JavaScript rendering, auth, robots.txt, etc.)
+# ============================================================================
+
+@integration_bp.route('/webscraper-enhanced/configure', methods=['POST'])
+@require_auth
+def webscraper_enhanced_configure():
+    """
+    Configure enhanced website scraper with advanced features.
+
+    Request body:
+    {
+        // Basic settings
+        "start_url": "https://example.com",
+        "max_depth": 3,
+        "max_pages": 50,
+        "rate_limit_delay": 1.0,
+
+        // Content filters
+        "min_content_length": 100,
+        "max_content_length": 1000000,
+        "include_pdfs": true,
+
+        // JavaScript rendering (for React/Vue/Angular sites)
+        "render_js": false,
+        "js_engine": "playwright",  // "selenium" or "playwright"
+        "js_wait_time": 3,
+
+        // Authentication
+        "auth_type": null,  // "basic", "bearer", "cookies", "form"
+        "auth_username": null,
+        "auth_password": null,
+        "auth_cookies": {},
+        "auth_headers": {},
+
+        // Compliance
+        "respect_robots_txt": true,
+        "use_sitemap": true,
+
+        // User-Agent rotation
+        "rotate_user_agent": false,
+        "user_agents": [],
+
+        // Proxy support
+        "use_proxy": false,
+        "proxy_url": null,
+        "proxy_rotation": false,
+        "proxy_list": [],
+
+        // Retry logic
+        "max_retries": 3,
+        "retry_delay": 2
+    }
+    """
+    try:
+        from utils.logger import log_info, log_error
+
+        data = request.get_json()
+        start_url = data.get("start_url", "").strip()
+
+        if not start_url:
+            return jsonify({
+                "success": False,
+                "error": "start_url is required"
+            }), 400
+
+        # Validate URL
+        if not start_url.startswith(("http://", "https://")):
+            start_url = "https://" + start_url
+
+        # Build enhanced settings
+        settings = {
+            # Basic settings
+            "start_url": start_url,
+            "priority_paths": data.get("priority_paths", []),
+            "max_depth": data.get("max_depth", 3),
+            "max_pages": data.get("max_pages", 50),
+            "rate_limit_delay": data.get("rate_limit_delay", 1.0),
+
+            # Content filters (configurable, not hardcoded!)
+            "min_content_length": data.get("min_content_length", 100),
+            "max_content_length": data.get("max_content_length", 1000000),
+            "include_pdfs": data.get("include_pdfs", True),
+            "allowed_extensions": data.get("allowed_extensions", [".html", ".htm", ".pdf", ""]),
+            "exclude_patterns": data.get("exclude_patterns", ["#", "mailto:", "tel:"]),
+
+            # JavaScript rendering
+            "render_js": data.get("render_js", False),
+            "js_engine": data.get("js_engine", "playwright"),
+            "js_wait_time": data.get("js_wait_time", 3),
+
+            # Authentication
+            "auth_type": data.get("auth_type"),
+            "auth_username": data.get("auth_username"),
+            "auth_password": data.get("auth_password"),
+            "auth_cookies": data.get("auth_cookies", {}),
+            "auth_headers": data.get("auth_headers", {}),
+            "auth_login_url": data.get("auth_login_url"),
+
+            # Compliance
+            "respect_robots_txt": data.get("respect_robots_txt", True),
+            "use_sitemap": data.get("use_sitemap", True),
+
+            # User-Agent rotation
+            "rotate_user_agent": data.get("rotate_user_agent", False),
+            "user_agents": data.get("user_agents", []),
+
+            # Proxy support
+            "use_proxy": data.get("use_proxy", False),
+            "proxy_url": data.get("proxy_url"),
+            "proxy_rotation": data.get("proxy_rotation", False),
+            "proxy_list": data.get("proxy_list", []),
+
+            # Retry logic
+            "max_retries": data.get("max_retries", 3),
+            "retry_delay": data.get("retry_delay", 2),
+        }
+
+        db = get_db()
+        try:
+            # Check for existing connector
+            # Use same WEBSCRAPER type but with enhanced=true flag in settings
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == g.tenant_id,
+                Connector.connector_type == ConnectorType.WEBSCRAPER,
+                Connector.settings["enhanced"].astext == "true"
+            ).first()
+
+            # Mark as enhanced
+            settings["enhanced"] = True
+
+            is_first_connection = connector is None
+
+            if connector:
+                # Update existing
+                connector.settings = settings
+                connector.status = ConnectorStatus.CONNECTED
+                connector.is_active = True
+                connector.error_message = None
+                connector.updated_at = utc_now()
+            else:
+                # Create new
+                from urllib.parse import urlparse
+                parsed = urlparse(start_url)
+                name = f"Enhanced Web Scraper ({parsed.netloc})"
+
+                connector = Connector(
+                    tenant_id=g.tenant_id,
+                    user_id=g.user_id,
+                    connector_type=ConnectorType.WEBSCRAPER,
+                    name=name,
+                    status=ConnectorStatus.CONNECTED,
+                    settings=settings
+                )
+                db.add(connector)
+
+            db.commit()
+
+            log_info("WebScraperEnhanced", "Configured successfully",
+                    start_url=start_url, render_js=settings["render_js"])
+
+            # Auto-sync on first connection
+            if is_first_connection:
+                import threading
+                connector_id = connector.id
+                tenant_id = g.tenant_id
+                user_id = g.user_id
+
+                def run_initial_sync():
+                    _run_connector_sync_enhanced(
+                        connector_id=connector_id,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        full_sync=True
+                    )
+
+                thread = threading.Thread(target=run_initial_sync)
+                thread.daemon = True
+                thread.start()
+
+                log_info("WebScraperEnhanced", "Started auto-sync", url=start_url)
+
+            return jsonify({
+                "success": True,
+                "message": "Enhanced web scraper configured successfully",
+                "connector_id": connector.id,
+                "features": {
+                    "javascript_rendering": settings["render_js"],
+                    "authentication": settings["auth_type"] is not None,
+                    "robots_txt_compliance": settings["respect_robots_txt"],
+                    "sitemap_parsing": settings["use_sitemap"],
+                    "user_agent_rotation": settings["rotate_user_agent"],
+                    "proxy_support": settings["use_proxy"]
+                }
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        from utils.logger import log_error
+        log_error("WebScraperEnhanced", "Configuration failed", error=e)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+def _run_connector_sync_enhanced(connector_id: str, tenant_id: str, user_id: str, full_sync: bool = False):
+    """Run enhanced web scraper sync in background"""
+    from connectors.webscraper_connector_enhanced import EnhancedWebScraperConnector
+    from connectors.base_connector import ConnectorConfig
+    from utils.logger import log_info, log_error
+
+    db = get_db()
+    try:
+        connector = db.query(Connector).filter(Connector.id == connector_id).first()
+        if not connector:
+            log_error("WebScraperEnhanced", "Connector not found", connector_id=connector_id)
+            return
+
+        # Update status
+        connector.status = ConnectorStatus.SYNCING
+        db.commit()
+
+        # Create connector instance
+        config = ConnectorConfig(
+            tenant_id=tenant_id,
+            connector_type="webscraper_enhanced",
+            credentials={},
+            settings=connector.settings
+        )
+
+        scraper = EnhancedWebScraperConnector(config)
+
+        # Connect
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        if not loop.run_until_complete(scraper.connect()):
+            connector.status = ConnectorStatus.ERROR
+            connector.error_message = "Failed to connect to website"
+            db.commit()
+            log_error("WebScraperEnhanced", "Connection failed", url=connector.settings.get("start_url"))
+            return
+
+        # Sync
+        log_info("WebScraperEnhanced", "Starting sync", url=connector.settings.get("start_url"))
+        documents = loop.run_until_complete(scraper.sync())
+
+        # Store documents
+        extraction_service = get_extraction_service()
+        embedding_service = get_embedding_service()
+        doc_ids = []
+
+        for doc in documents:
+            # Create database document
+            db_doc = Document(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                title=doc.title,
+                content=doc.content,
+                source="webscraper_enhanced",
+                sender_email=None,
+                external_id=doc.doc_id,
+                doc_metadata=doc.metadata,
+                classification=DocumentClassification.WORK,
+                classification_confidence=1.0,
+                classified_at=utc_now(),
+                document_status=DocumentStatus.ACTIVE,
+                created_at=utc_now()
+            )
+            db.add(db_doc)
+            db.commit()
+            db.refresh(db_doc)
+
+            # Extract structured summary
+            extraction_service.extract_and_update(db_doc, db)
+            doc_ids.append(db_doc.id)
+
+        # Embed documents
+        if doc_ids:
+            embedding_service.embed_documents(doc_ids, tenant_id, db)
+
+        # Update connector
+        connector.status = ConnectorStatus.CONNECTED
+        connector.last_sync_at = utc_now()
+        connector.total_items_synced = (connector.total_items_synced or 0) + len(documents)
+        connector.error_message = None
+        db.commit()
+
+        log_info("WebScraperEnhanced", "Sync complete", documents=len(documents))
+
+        loop.close()
+
+    except Exception as e:
+        if connector:
+            connector.status = ConnectorStatus.ERROR
+            connector.error_message = str(e)
+            db.commit()
+        log_error("WebScraperEnhanced", "Sync failed", error=e)
+    finally:
+        db.close()
+
+
+# ============================================================================
 # SYNC OPERATIONS
 # ============================================================================
 

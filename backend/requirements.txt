@@ -74,3 +74,24 @@ kombu==5.3.4
 # NLP
 spacy==3.7.2
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.0/en_core_web_sm-3.7.0-py3-none-any.whl
+
+# ============================================================================
+# OPTIONAL: Enhanced Web Scraper Dependencies
+# ============================================================================
+# Uncomment these lines to enable advanced web scraping features:
+# - JavaScript rendering (for React/Vue/Angular sites)
+# - Browser automation (Selenium or Playwright)
+#
+# Basic web scraping (beautifulsoup4 + requests) is already included above.
+#
+# For JavaScript rendering with Playwright (RECOMMENDED):
+# playwright==1.40.0
+# Then run: playwright install chromium
+#
+# For JavaScript rendering with Selenium (alternative):
+# selenium==4.16.0
+# webdriver-manager==4.0.1
+# Then install ChromeDriver separately
+#
+# Note: JavaScript rendering adds 3-5x overhead. Only enable if needed.
+# ============================================================================
