@@ -2124,35 +2124,25 @@ def sync_connector(connector_type: str):
             connector.status = ConnectorStatus.SYNCING
             db.commit()
 
-            # CRITICAL: Capture values BEFORE closing db session (to avoid lazy loading errors)
-            conn_id = connector.id
-            tenant = g.tenant_id
-            user = g.user_id
+            # Use Celery for background processing (worker is running!)
+            from tasks.sync_tasks import sync_connector_task
+
+            # Start background task
+            task = sync_connector_task.delay(
+                connector_id=connector.id,
+                tenant_id=g.tenant_id,
+                force=full_sync
+            )
+
+            return jsonify({
+                "success": True,
+                "message": f"{connector_type.title()} sync started in background",
+                "connector_id": connector.id,
+                "job_id": task.id
+            })
 
         finally:
             db.close()
-
-        # FIXED: Use threading instead of Celery (Celery not running on Render)
-        # Start thread AFTER closing db session to avoid session conflicts
-        import threading
-        def run_sync():
-            _run_connector_sync(
-                connector_id=conn_id,
-                connector_type=connector_type,
-                since=since,
-                tenant_id=tenant,
-                user_id=user,
-                full_sync=full_sync
-            )
-
-        thread = threading.Thread(target=run_sync)
-        thread.start()
-
-        return jsonify({
-            "success": True,
-            "message": f"{connector_type.title()} sync started in background",
-            "connector_id": conn_id
-        })
 
     except Exception as e:
         return jsonify({
