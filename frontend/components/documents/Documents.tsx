@@ -505,27 +505,62 @@ export default function Documents() {
           </div>
 
           {/* Search Bar */}
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search documents..."
-            style={{
-              width: '100%',
-              maxWidth: '600px',
-              padding: '12px 16px',
-              borderRadius: '8px',
-              border: '1.5px solid #D1D5DB',
-              backgroundColor: '#FFFFFF',
-              outline: 'none',
-              fontFamily: notionFont,
-              fontSize: '15px',
-              color: '#111827',
-              transition: 'border-color 0.2s'
-            }}
-            onFocus={(e) => e.currentTarget.style.borderColor = '#9CA3AF'}
-            onBlur={(e) => e.currentTarget.style.borderColor = '#D1D5DB'}
-          />
+          <div style={{
+            position: 'relative',
+            width: '100%'
+          }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  filterDocuments()
+                }
+              }}
+              placeholder="Search documents..."
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                paddingRight: '50px',
+                borderRadius: '8px',
+                border: '1.5px solid #D1D5DB',
+                backgroundColor: '#FFFFFF',
+                outline: 'none',
+                fontFamily: notionFont,
+                fontSize: '15px',
+                color: '#111827',
+                transition: 'border-color 0.2s'
+              }}
+              onFocus={(e) => e.currentTarget.style.borderColor = '#9CA3AF'}
+              onBlur={(e) => e.currentTarget.style.borderColor = '#D1D5DB'}
+            />
+            <button
+              onClick={filterDocuments}
+              style={{
+                position: 'absolute',
+                right: '8px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                padding: '8px',
+                backgroundColor: '#A67C52',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#8B6341'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#A67C52'}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Category Cards Grid */}
