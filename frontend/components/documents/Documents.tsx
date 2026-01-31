@@ -27,6 +27,8 @@ interface Document {
   folder_path?: string
   content?: string
   url?: string
+  summary?: string
+  quickSummary?: string
 }
 
 interface FullDocument {
@@ -137,6 +139,21 @@ export default function Documents() {
           const createdDate = doc.created_at ? new Date(doc.created_at).toLocaleDateString() : 'Unknown'
           const modifiedDate = doc.source_created_at ? new Date(doc.source_created_at).toLocaleDateString() : createdDate
 
+          // Create quick 3-5 word summary
+          let quickSummary = ''
+          if (doc.summary) {
+            // Take first 5 words from existing summary
+            const words = doc.summary.split(' ').slice(0, 5).join(' ')
+            quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words
+          } else if (doc.structured_summary?.summary) {
+            const words = doc.structured_summary.summary.split(' ').slice(0, 5).join(' ')
+            quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words
+          } else {
+            // Fallback: use content preview
+            const words = (doc.content || '').trim().split(' ').slice(0, 5).join(' ')
+            quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words || 'No preview available'
+          }
+
           return {
             id: doc.id || `doc_${index}`,
             name: doc.title || 'Untitled Document',
@@ -149,7 +166,9 @@ export default function Documents() {
             classification: doc.classification,
             source_type: doc.source_type,
             url: doc.metadata?.url || doc.metadata?.source_url,
-            content: doc.content
+            content: doc.content,
+            summary: doc.summary,
+            quickSummary
           }
         })
 
@@ -427,6 +446,20 @@ export default function Documents() {
           }}>
             {doc.name}
           </div>
+          {doc.quickSummary && (
+            <div style={{
+              fontFamily: notionFont,
+              fontSize: '13px',
+              color: '#9CA3AF',
+              fontStyle: 'italic',
+              marginBottom: '4px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
+              {doc.quickSummary}
+            </div>
+          )}
           <div style={{
             fontFamily: notionFont,
             fontSize: '13px',
