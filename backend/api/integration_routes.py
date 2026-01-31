@@ -2502,6 +2502,49 @@ def _run_connector_sync(
         db.close()
 
 
+@integration_bp.route('/<connector_type>/sync/cancel', methods=['POST'])
+@require_auth
+def cancel_sync(connector_type: str):
+    """
+    Cancel an ongoing sync operation (EMERGENCY STOP).
+
+    Response:
+    {
+        "success": true,
+        "message": "Sync cancelled"
+    }
+    """
+    try:
+        progress_key = f"{g.tenant_id}:{connector_type}"
+
+        if progress_key in sync_progress:
+            sync_progress[progress_key] = {
+                "status": "cancelled",
+                "progress": 0,
+                "documents_found": 0,
+                "documents_parsed": 0,
+                "documents_embedded": 0,
+                "current_file": None,
+                "error": "Sync cancelled by user"
+            }
+
+            return jsonify({
+                "success": True,
+                "message": f"{connector_type} sync cancelled"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "No active sync found"
+            }), 404
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @integration_bp.route('/<connector_type>/sync/status', methods=['GET'])
 @require_auth
 def get_sync_status(connector_type: str):
