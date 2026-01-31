@@ -2522,21 +2522,32 @@ export default function Integrations() {
           if (response.data.success) {
             const status = response.data.status
             if (status.status === 'syncing' || status.status === 'parsing' || status.status === 'embedding' || status.status === 'starting') {
-              // Sync is still in progress - show the modal and start polling
-              setSyncProgress({
-                integration: savedState.integration,
-                status: status.status,
-                progress: status.progress || 0,
-                documentsFound: status.documents_found || 0,
-                documentsParsed: status.documents_parsed || 0,
-                documentsEmbedded: status.documents_embedded || 0,
-                currentFile: status.current_file,
-                startTime: savedState.startTime
-              })
-              setShowSyncProgress(true)
-              // Start polling (reduced from 1000ms to 2000ms to reduce server load)
-              const interval = setInterval(() => pollSyncStatus(savedState.integration), 2000)
-              setSyncPollingInterval(interval)
+              // Sync is still in progress - ASK USER before resuming
+              const integrationName = savedState.integration.charAt(0).toUpperCase() + savedState.integration.slice(1)
+              const shouldResume = window.confirm(
+                `${integrationName} sync was in progress when you left. Resume watching progress?`
+              )
+
+              if (shouldResume) {
+                // User wants to resume - show the modal and start polling
+                setSyncProgress({
+                  integration: savedState.integration,
+                  status: status.status,
+                  progress: status.progress || 0,
+                  documentsFound: status.documents_found || 0,
+                  documentsParsed: status.documents_parsed || 0,
+                  documentsEmbedded: status.documents_embedded || 0,
+                  currentFile: status.current_file,
+                  startTime: savedState.startTime
+                })
+                setShowSyncProgress(true)
+                // Start polling (reduced from 1000ms to 2000ms to reduce server load)
+                const interval = setInterval(() => pollSyncStatus(savedState.integration), 2000)
+                setSyncPollingInterval(interval)
+              } else {
+                // User declined - clear saved state, let sync continue in background
+                saveSyncState(null)
+              }
             } else if (status.status === 'completed') {
               // Sync completed while user was away - keep the completed state
               const integrationName = savedState.integration.charAt(0).toUpperCase() + savedState.integration.slice(1)
