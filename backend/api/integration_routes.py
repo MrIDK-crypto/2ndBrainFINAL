@@ -2171,8 +2171,7 @@ def _run_connector_sync(
         "documents_embedded": 0,
         "current_file": None,
         "error": None,
-        "started_at": utc_now().isoformat(),
-        "last_polled": time.time()  # Track last polling time for timeout detection
+        "started_at": utc_now().isoformat()
     }
 
     db = get_db()
@@ -2567,7 +2566,6 @@ def get_sync_status(connector_type: str):
     }
     """
     try:
-        import time
         progress_key = f"{g.tenant_id}:{connector_type}"
 
         if progress_key not in sync_progress:
@@ -2623,20 +2621,6 @@ def get_sync_status(connector_type: str):
                 })
             finally:
                 db.close()
-
-        # Check for timeout (5 minutes = 300 seconds)
-        current_time = time.time()
-        last_polled = sync_progress[progress_key].get('last_polled', current_time)
-        time_since_poll = current_time - last_polled
-
-        # Auto-cancel syncs that haven't been polled in 5+ minutes
-        if time_since_poll > 300 and sync_progress[progress_key].get('status') not in ['completed', 'error', 'cancelled']:
-            print(f"[Sync Timeout] Auto-cancelling {connector_type} sync - no polling for {int(time_since_poll)}s")
-            sync_progress[progress_key]['status'] = 'cancelled'
-            sync_progress[progress_key]['error'] = f'Sync auto-cancelled after {int(time_since_poll/60)} minutes of inactivity'
-
-        # Update last polled timestamp
-        sync_progress[progress_key]['last_polled'] = current_time
 
         return jsonify({
             "success": True,
