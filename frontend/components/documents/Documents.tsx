@@ -98,6 +98,13 @@ export default function Documents() {
         const apiDocs = response.data.documents
         console.log(`Loaded ${apiDocs.length} documents from API`)
 
+        // Debug: Check first document's fields
+        if (apiDocs.length > 0) {
+          console.log('First document fields:', Object.keys(apiDocs[0]))
+          console.log('First document summary:', apiDocs[0].summary)
+          console.log('First document structured_summary:', apiDocs[0].structured_summary)
+        }
+
         const docs: Document[] = apiDocs.map((doc: any, index: number) => {
           let category: 'Meetings' | 'Documents' | 'Personal Items' | 'Other Items' | 'Web Scraper' | 'Code' = 'Other Items'
           const title = doc.title?.toLowerCase() || ''
@@ -147,17 +154,37 @@ export default function Documents() {
 
           // Create quick 3-5 word summary
           let quickSummary = ''
-          if (doc.summary) {
+
+          // Try different sources for summary
+          if (doc.summary && doc.summary.trim()) {
             // Take first 5 words from existing summary
-            const words = doc.summary.split(' ').slice(0, 5).join(' ')
+            const words = doc.summary.split(' ').filter(w => w.length > 0).slice(0, 5).join(' ')
             quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words
           } else if (doc.structured_summary?.summary) {
-            const words = doc.structured_summary.summary.split(' ').slice(0, 5).join(' ')
+            const words = doc.structured_summary.summary.split(' ').filter(w => w.length > 0).slice(0, 5).join(' ')
+            quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words
+          } else if (doc.content && doc.content.trim().length > 0) {
+            // Fallback 1: Use first sentence of content
+            const firstSentence = doc.content.trim().split(/[.!?]\s/)[0]
+            const words = firstSentence.split(' ').filter(w => w.length > 0).slice(0, 6).join(' ')
+            quickSummary = words.length > 50 ? words.substring(0, 50) + '...' : words + '...'
+          } else if (doc.metadata?.description) {
+            // Fallback 2: Use metadata description
+            const words = doc.metadata.description.split(' ').filter(w => w.length > 0).slice(0, 5).join(' ')
             quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words
           } else {
-            // Fallback: use content preview
-            const words = (doc.content || '').trim().split(' ').slice(0, 5).join(' ')
-            quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words || 'No preview available'
+            // Final fallback: extract from title or use type
+            quickSummary = `${doc.source_type || 'Document'} from ${sourceType || 'unknown source'}`
+          }
+
+          // Debug logging
+          if (!quickSummary || quickSummary === 'No preview available') {
+            console.log(`[Summary] No summary for: ${doc.title}`, {
+              hasSummary: !!doc.summary,
+              hasStructuredSummary: !!doc.structured_summary,
+              hasContent: !!doc.content,
+              contentLength: doc.content?.length || 0
+            })
           }
 
           return {
