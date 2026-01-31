@@ -62,7 +62,7 @@ class PineconeVectorStore:
     - Upsert (not insert) handles updates automatically
     """
 
-    BATCH_SIZE = 500  # OPTIMIZED: Increased from 100 to 500 (5x faster)
+    BATCH_SIZE = 200  # Reduced to stay under Pinecone's 4MB limit (was 500, caused 4.3MB batches)
     EMBEDDING_BATCH_SIZE = 50  # Embed 50 texts per API call (10x faster)
     MAX_RETRIES = 3
     RETRY_DELAY = 1  # seconds
