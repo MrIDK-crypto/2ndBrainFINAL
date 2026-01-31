@@ -385,12 +385,14 @@ const SyncProgressModal = ({
   onClose,
   progress,
   onMinimize,
+  onCancel,
   syncStartTime
 }: {
   isOpen: boolean
   onClose: () => void
   progress: SyncProgress | null
   onMinimize?: () => void
+  onCancel?: () => void
   syncStartTime?: number
 }) => {
   // Track progress history for better time estimation
@@ -750,7 +752,8 @@ const SyncProgressModal = ({
               padding: '12px 14px',
               backgroundColor: '#F0FDF4',
               borderRadius: '10px',
-              border: '1px solid #BBF7D0'
+              border: '1px solid #BBF7D0',
+              marginBottom: '12px'
             }}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <circle cx="8" cy="8" r="7" stroke="#22C55E" strokeWidth="1.5" />
@@ -765,6 +768,32 @@ const SyncProgressModal = ({
                 You can close this window. Sync continues in the background.
               </span>
             </div>
+
+            {/* Stop Sync Button */}
+            <button
+              onClick={onCancel || onClose}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '10px',
+                border: '1px solid #DC2626',
+                backgroundColor: '#FEFEFE',
+                color: '#DC2626',
+                fontFamily: '"Work Sans", sans-serif',
+                fontSize: '14px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.backgroundColor = '#FEE2E2'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.backgroundColor = '#FEFEFE'
+              }}
+            >
+              Stop Sync
+            </button>
           </>
         )}
 
@@ -2907,11 +2936,15 @@ export default function Integrations() {
     }
   }
 
-  // Minimize sync progress modal (hide but keep polling - sync continues in background)
+  // Minimize sync progress modal - ALWAYS stop polling to prevent infinite loop
   const minimizeSyncProgress = () => {
     setShowSyncProgress(false)
-    // Don't clear syncProgress or polling - sync continues in background
-    // The backend runs sync in a separate thread, so it will complete even if user navigates away
+    // CRITICAL FIX: Stop polling when minimizing to prevent infinite requests
+    if (syncPollingInterval) {
+      clearInterval(syncPollingInterval)
+      setSyncPollingInterval(null)
+    }
+    // Backend sync continues in background, but we stop checking status
   }
 
   // Close sync progress modal (hide modal but keep completed state for persistence)
@@ -2932,6 +2965,27 @@ export default function Integrations() {
     } else {
       minimizeSyncProgress()
     }
+  }
+
+  // Cancel sync - stop polling and reset state
+  const cancelSync = () => {
+    // Stop polling immediately
+    if (syncPollingInterval) {
+      clearInterval(syncPollingInterval)
+      setSyncPollingInterval(null)
+    }
+
+    // Clear saved state
+    saveSyncState(null)
+
+    // Reset progress to cancelled
+    setSyncProgress(prev => prev ? {
+      ...prev,
+      status: 'error',
+      error: 'Sync cancelled by user'
+    } : null)
+
+    setSyncStatus('Sync cancelled')
   }
 
   // Generic sync function (legacy - for sync buttons)
@@ -3304,6 +3358,7 @@ export default function Integrations() {
         onClose={handleSyncModalClose}
         progress={syncProgress}
         onMinimize={minimizeSyncProgress}
+        onCancel={cancelSync}
       />
 
       {/* Integration Details Modal */}
