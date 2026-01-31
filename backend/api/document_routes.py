@@ -1272,6 +1272,73 @@ def get_document_stats():
         }), 500
 
 
+@document_bp.route('/debug/tenant-info', methods=['GET'])
+@require_auth
+def get_tenant_debug_info():
+    """
+    Debug endpoint to see current tenant info and document counts.
+
+    Response:
+    {
+        "success": true,
+        "debug": {
+            "current_tenant_id": "...",
+            "current_user_id": "...",
+            "current_email": "...",
+            "documents_for_this_tenant": 0,
+            "all_tenants_with_documents": [
+                {"tenant_id": "xxx", "count": 80},
+                ...
+            ]
+        }
+    }
+    """
+    try:
+        db = get_db()
+        try:
+            from sqlalchemy import func
+
+            # Current user's document count
+            my_doc_count = db.query(Document).filter(
+                Document.tenant_id == g.tenant_id,
+                Document.is_deleted == False
+            ).count()
+
+            # All tenants with documents
+            all_tenants = db.query(
+                Document.tenant_id,
+                func.count(Document.id).label('count')
+            ).filter(
+                Document.is_deleted == False
+            ).group_by(Document.tenant_id).all()
+
+            return jsonify({
+                "success": True,
+                "debug": {
+                    "current_tenant_id": g.tenant_id,
+                    "current_user_id": g.user_id,
+                    "current_email": g.email,
+                    "documents_for_this_tenant": my_doc_count,
+                    "all_tenants_with_documents": [
+                        {
+                            "tenant_id": tenant_id[:16] + "..." if len(tenant_id) > 16 else tenant_id,
+                            "count": count
+                        }
+                        for tenant_id, count in all_tenants
+                    ]
+                }
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 # ============================================================================
 # FOR REVIEW
 # ============================================================================
