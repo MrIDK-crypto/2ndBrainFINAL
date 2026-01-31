@@ -350,14 +350,15 @@ export default function Documents() {
                        title.includes('document') || title.includes('presentation') ||
                        title.includes('agreement') || title.includes('contract') ||
                        title.includes('proposal') || title.includes('spec') ||
-                       sourceType === 'file' || sourceType === 'box') {
-              // Box files and regular files default to Documents
+                       sourceType === 'file' || sourceType === 'box' ||
+                       sourceType === 'webscraper' || sourceType === 'webscraper_enhanced') {
+              // Box files, regular files, and webscraper content default to Documents
               category = 'Documents'
             }
           }
 
-          // Final fallback: If source is Box or file, put in Documents (not Personal Items)
-          if (category === 'Other Items' && (sourceType === 'box' || sourceType === 'file')) {
+          // Final fallback: If source is Box, file, or webscraper, put in Documents (not Personal Items)
+          if (category === 'Other Items' && (sourceType === 'box' || sourceType === 'file' || sourceType === 'webscraper' || sourceType === 'webscraper_enhanced')) {
             category = 'Documents'
           }
 
