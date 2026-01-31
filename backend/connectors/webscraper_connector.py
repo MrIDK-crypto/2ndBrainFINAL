@@ -1,202 +1,476 @@
 """
-Simple, reliable webscraper connector.
-Built from scratch - clean and easy to understand.
+Website Scraper Connector
+Crawls websites to extract protocols, documentation, and other content.
+Useful for scraping PI lab websites, documentation sites, etc.
 """
 
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+import os
+import re
 import time
-from typing import List, Set, Optional
-from dataclasses import dataclass
+from datetime import datetime
+from typing import List, Dict, Optional, Set
+from urllib.parse import urljoin, urlparse
+from collections import deque
+
+from .base_connector import BaseConnector, ConnectorConfig, ConnectorStatus, Document
+
+try:
+    import requests
+    from bs4 import BeautifulSoup
+    SCRAPER_AVAILABLE = True
+except ImportError:
+    SCRAPER_AVAILABLE = False
 
 
-@dataclass
-class ScrapedDocument:
-    """A single scraped document"""
-    doc_id: str  # URL
-    title: str
-    content: str
-    source: str  # 'webscraper'
-    url: str
-    metadata: dict
-
-
-class SimpleWebCrawler:
+class WebScraperConnector(BaseConnector):
     """
-    Simple web crawler that follows links and extracts content.
-    Based on the user's base code - no complexity, just works.
+    Website scraper connector for extracting content from websites.
+
+    Features:
+    - Crawls starting URL and follows internal links
+    - Extracts text from HTML pages
+    - Downloads and parses PDFs
+    - Respects max depth and max pages limits
+    - Same-domain restriction (no external links)
+    - Configurable rate limiting
     """
 
-    def __init__(self, start_url: str, max_pages: int = 50, max_depth: int = 3):
-        self.start_url = start_url
-        self.domain = urlparse(start_url).netloc
-        self.max_pages = max_pages
-        self.max_depth = max_depth
+    CONNECTOR_TYPE = "webscraper"
+    REQUIRED_CREDENTIALS = []
+    OPTIONAL_SETTINGS = {
+        "start_url": "",  # Required - starting URL to crawl
+        "priority_paths": [],  # Optional - paths to prioritize (e.g., ["/resources/", "/protocols/"])
+        "max_depth": 3,  # Maximum link depth from start URL
+        "max_pages": 50,  # Maximum pages to crawl
+        "include_pdfs": True,  # Download and parse PDFs
+        "rate_limit_delay": 1.0,  # Seconds between requests
+        "allowed_extensions": [".html", ".htm", ".pdf", ""],  # Empty string = no extension (index pages)
+        "exclude_patterns": ["#", "mailto:", "tel:"],  # URL patterns to exclude
+    }
 
-        self.visited: Set[str] = set()
-        self.documents: List[ScrapedDocument] = []
+    def __init__(self, config: ConnectorConfig):
+        super().__init__(config)
+        self.visited_urls: Set[str] = set()
+        self.session = None
+        self.base_domain = None
 
-    def normalize_url(self, url: str) -> str:
-        """Remove fragments and trailing slashes"""
-        url = url.split('#')[0]  # Remove #section
-        url = url.rstrip('/')
-        return url
-
-    def should_crawl(self, url: str, depth: int) -> bool:
-        """Check if we should crawl this URL"""
-        # Already visited?
-        if url in self.visited:
+    async def connect(self) -> bool:
+        """Test website connection"""
+        if not SCRAPER_AVAILABLE:
+            self._set_error("BeautifulSoup4 and requests not installed. Run: pip install beautifulsoup4 requests")
             return False
-
-        # Hit max pages?
-        if len(self.visited) >= self.max_pages:
-            return False
-
-        # Too deep?
-        if depth > self.max_depth:
-            return False
-
-        # Different domain?
-        if urlparse(url).netloc != self.domain:
-            return False
-
-        # Skip common non-content files
-        skip_extensions = ['.pdf', '.jpg', '.png', '.gif', '.zip', '.exe', '.mp4']
-        if any(url.lower().endswith(ext) for ext in skip_extensions):
-            return False
-
-        return True
-
-    def extract_text(self, soup: BeautifulSoup) -> str:
-        """Extract clean text from HTML"""
-        # Remove script and style tags
-        for script in soup(["script", "style", "nav", "footer", "header"]):
-            script.decompose()
-
-        # Get text
-        text = soup.get_text(separator='\n', strip=True)
-
-        # Clean up whitespace
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        text = '\n'.join(lines)
-
-        return text
-
-    def crawl_page(self, url: str, depth: int = 0):
-        """Crawl a single page and follow its links"""
-
-        # Check if should crawl
-        if not self.should_crawl(url, depth):
-            return
-
-        print(f"[Webscraper] Crawling (depth {depth}): {url}")
-        self.visited.add(url)
 
         try:
-            # Fetch page
-            response = requests.get(url, timeout=10, headers={
-                'User-Agent': 'Mozilla/5.0 (compatible; 2ndBrain-Bot/1.0)'
+            self.status = ConnectorStatus.CONNECTING
+
+            start_url = self.config.settings.get("start_url", "").strip()
+            if not start_url:
+                self._set_error("No start_url configured. Please set 'start_url' in settings.")
+                return False
+
+            # Validate URL
+            if not start_url.startswith(("http://", "https://")):
+                start_url = "https://" + start_url
+                self.config.settings["start_url"] = start_url
+
+            # Extract base domain
+            parsed = urlparse(start_url)
+            self.base_domain = f"{parsed.scheme}://{parsed.netloc}"
+
+            # Create session
+            self.session = requests.Session()
+            self.session.headers.update({
+                "User-Agent": "Mozilla/5.0 (compatible; 2ndBrainBot/1.0; +https://github.com/your-repo)"
             })
 
+            # Test connection
+            response = self.session.get(start_url, timeout=10, allow_redirects=True)
             if response.status_code != 200:
-                print(f"[Webscraper] Skipping {url} - status {response.status_code}")
-                return
+                self._set_error(f"Failed to connect: HTTP {response.status_code}")
+                return False
 
-            # Parse HTML
-            soup = BeautifulSoup(response.text, 'html.parser')
-
-            # Extract title
-            title = soup.title.string if soup.title else url
-            title = title.strip() if title else url
-
-            # Extract content
-            content = self.extract_text(soup)
-
-            # Skip if no content
-            if not content or len(content) < 100:
-                print(f"[Webscraper] Skipping {url} - no content")
-                return
-
-            # Create document
-            doc = ScrapedDocument(
-                doc_id=url,
-                title=title,
-                content=content,
-                source='webscraper',
-                url=url,
-                metadata={
-                    'depth': depth,
-                    'domain': self.domain,
-                    'content_length': len(content)
-                }
-            )
-
-            self.documents.append(doc)
-            print(f"[Webscraper] ✓ Scraped: {title} ({len(content)} chars)")
-
-            # Find and follow links (if not at max depth)
-            if depth < self.max_depth and len(self.visited) < self.max_pages:
-                for link in soup.find_all('a', href=True):
-                    full_url = urljoin(url, link['href'])
-                    full_url = self.normalize_url(full_url)
-
-                    # Recursively crawl
-                    self.crawl_page(full_url, depth + 1)
-
-                    # Small delay to be polite
-                    time.sleep(0.5)
+            self.status = ConnectorStatus.CONNECTED
+            self._clear_error()
+            print(f"[WebScraper] Connected to {start_url}")
+            return True
 
         except Exception as e:
-            print(f"[Webscraper] Error crawling {url}: {e}")
+            self._set_error(f"Failed to connect: {str(e)}")
+            return False
 
-    def crawl(self) -> List[ScrapedDocument]:
-        """Start crawling from the start URL"""
-        print(f"[Webscraper] Starting crawl of {self.start_url}")
-        print(f"[Webscraper] Max pages: {self.max_pages}, Max depth: {self.max_depth}")
+    async def disconnect(self) -> bool:
+        """Disconnect"""
+        if self.session:
+            self.session.close()
+        self.visited_urls.clear()
+        self.status = ConnectorStatus.DISCONNECTED
+        return True
 
-        self.crawl_page(self.start_url, depth=0)
+    async def test_connection(self) -> bool:
+        """Test connection"""
+        return await self.connect()
 
-        print(f"[Webscraper] Finished! Scraped {len(self.documents)} pages")
-        return self.documents
-
-
-class WebScraperConnector:
-    """
-    Connector interface for the webscraper.
-    Matches the backend connector pattern.
-    """
-
-    def __init__(self, config):
-        self.config = config
-        self.start_url = config.settings.get('start_url')
-        self.max_pages = config.settings.get('max_pages', 50)
-        self.max_depth = config.settings.get('max_depth', 3)
-
-    def sync(self, since=None) -> List[ScrapedDocument]:
+    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """
-        Sync (crawl) the website and return documents.
+        Crawl website and extract content.
 
         Args:
-            since: Not used for webscraper (always full crawl)
+            since: Not used for web scraping (always fetches current content)
 
         Returns:
-            List of ScrapedDocument objects
+            List of Document objects
         """
-        print(f"[Webscraper] sync() called with start_url={self.start_url}")
+        print(f"[WebScraper] === SYNC STARTED ===")
+        print(f"[WebScraper] SCRAPER_AVAILABLE: {SCRAPER_AVAILABLE}")
+        print(f"[WebScraper] Current status: {self.status}")
+
+        if self.status != ConnectorStatus.CONNECTED:
+            print(f"[WebScraper] Not connected, attempting to connect...")
+            if not await self.connect():
+                print(f"[WebScraper] Connection failed, returning empty list")
+                return []
+            print(f"[WebScraper] Connection successful")
+
+        self.status = ConnectorStatus.SYNCING
+        documents = []
 
         try:
-            crawler = SimpleWebCrawler(
-                start_url=self.start_url,
-                max_pages=self.max_pages,
-                max_depth=self.max_depth
-            )
+            start_url = self.config.settings["start_url"]
+            max_depth = self.config.settings.get("max_depth", 3)
+            max_pages = self.config.settings.get("max_pages", 50)
+            priority_paths = self.config.settings.get("priority_paths", [])
+            rate_limit = self.config.settings.get("rate_limit_delay", 1.0)
 
-            documents = crawler.crawl()
+            print(f"[WebScraper] Starting crawl from {start_url}")
+            print(f"[WebScraper] Max depth: {max_depth}, Max pages: {max_pages}")
+            print(f"[WebScraper] Base domain: {self.base_domain}")
+            if priority_paths:
+                print(f"[WebScraper] Priority paths: {priority_paths}")
 
-            return documents
+            # BFS crawl with priority queue
+            # Format: (url, depth, is_priority)
+            queue = deque([(start_url, 0, False)])
+            priority_queue = deque()
+
+            # Add priority URLs to front of queue
+            if priority_paths:
+                for path in priority_paths:
+                    priority_url = urljoin(start_url, path)
+                    priority_queue.append((priority_url, 1, True))
+                    print(f"[WebScraper] Added priority URL: {priority_url}")
+
+            self.visited_urls.clear()
+            pages_crawled = 0
+
+            print(f"[WebScraper] Priority queue size: {len(priority_queue)}")
+            print(f"[WebScraper] Regular queue size: {len(queue)}")
+
+            # Process priority URLs first
+            while priority_queue and pages_crawled < max_pages:
+                print(f"[WebScraper] Processing priority queue (size: {len(priority_queue)})")
+                url, depth, _ = priority_queue.popleft()
+                print(f"[WebScraper] Popped priority URL: {url} (depth: {depth})")
+
+                if url in self.visited_urls:
+                    print(f"[WebScraper] Already visited, skipping: {url}")
+                    continue
+
+                print(f"[WebScraper] Crawling priority page: {url}")
+                doc = await self._crawl_page(url, depth)
+                if doc:
+                    documents.append(doc)
+                    pages_crawled += 1
+                    print(f"[WebScraper] ✓ Crawled priority page {pages_crawled}/{max_pages}: {url}")
+
+                    # Extract links from priority pages
+                    if depth < max_depth:
+                        links = self._extract_links(doc.metadata.get("html_content", ""), url)
+                        print(f"[WebScraper] Extracted {len(links)} links from {url}")
+                        for link in links:
+                            if link not in self.visited_urls:
+                                queue.append((link, depth + 1, False))
+                else:
+                    print(f"[WebScraper] ✗ No document returned for: {url}")
+
+                time.sleep(rate_limit)
+
+            # Process regular queue
+            print(f"[WebScraper] Starting regular queue processing (size: {len(queue)})")
+            while queue and pages_crawled < max_pages:
+                url, depth, _ = queue.popleft()
+                print(f"[WebScraper] Popped URL: {url} (depth: {depth})")
+
+                if url in self.visited_urls:
+                    print(f"[WebScraper] Already visited, skipping: {url}")
+                    continue
+
+                if depth > max_depth:
+                    print(f"[WebScraper] Depth {depth} exceeds max {max_depth}, skipping: {url}")
+                    continue
+
+                print(f"[WebScraper] Crawling page: {url}")
+                doc = await self._crawl_page(url, depth)
+                if doc:
+                    documents.append(doc)
+                    pages_crawled += 1
+                    print(f"[WebScraper] ✓ Crawled page {pages_crawled}/{max_pages}: {url}")
+
+                    # Extract links and add to queue
+                    if depth < max_depth:
+                        links = self._extract_links(doc.metadata.get("html_content", ""), url)
+                        print(f"[WebScraper] Extracted {len(links)} links from {url}")
+                        for link in links:
+                            if link not in self.visited_urls:
+                                queue.append((link, depth + 1, False))
+                else:
+                    print(f"[WebScraper] ✗ No document returned for: {url}")
+
+                time.sleep(rate_limit)
+
+            print(f"[WebScraper] === CRAWL COMPLETE ===")
+            print(f"[WebScraper] Pages crawled: {pages_crawled}")
+            print(f"[WebScraper] Documents created: {len(documents)}")
+            print(f"[WebScraper] URLs visited: {len(self.visited_urls)}")
+
+            self.config.last_sync = datetime.now()
+            self.status = ConnectorStatus.CONNECTED
+            self._clear_error()
+
         except Exception as e:
-            print(f"[Webscraper] ERROR in sync(): {e}")
+            self._set_error(f"Sync failed: {str(e)}")
+            print(f"[WebScraper] Sync error: {e}")
             import traceback
             traceback.print_exc()
-            raise
+
+        return documents
+
+    async def _crawl_page(self, url: str, depth: int) -> Optional[Document]:
+        """
+        Crawl a single page and extract content.
+
+        Args:
+            url: URL to crawl
+            depth: Current depth from start URL
+
+        Returns:
+            Document object or None
+        """
+        try:
+            # Mark as visited
+            self.visited_urls.add(url)
+            print(f"[WebScraper]   Marked as visited: {url}")
+
+            # Check if URL should be excluded
+            exclude_patterns = self.config.settings.get("exclude_patterns", [])
+            if any(pattern in url for pattern in exclude_patterns):
+                print(f"[WebScraper]   Excluded by pattern: {url}")
+                return None
+
+            # Check allowed extensions
+            allowed_extensions = self.config.settings.get("allowed_extensions", [])
+            url_path = urlparse(url).path.lower()
+            if allowed_extensions:
+                if not any(url_path.endswith(ext) for ext in allowed_extensions):
+                    print(f"[WebScraper]   Extension not allowed: {url_path}")
+                    return None
+
+            # Fetch page
+            print(f"[WebScraper]   Fetching: {url}")
+            response = self.session.get(url, timeout=30, allow_redirects=True)
+            print(f"[WebScraper]   Response: {response.status_code}")
+
+            if response.status_code != 200:
+                print(f"[WebScraper] Failed to fetch {url}: HTTP {response.status_code}")
+                return None
+
+            content_type = response.headers.get("Content-Type", "").lower()
+            print(f"[WebScraper]   Content-Type: {content_type}")
+
+            # Handle PDF
+            if "application/pdf" in content_type or url_path.endswith(".pdf"):
+                print(f"[WebScraper]   Detected PDF")
+                if self.config.settings.get("include_pdfs", True):
+                    return self._parse_pdf(url, response.content)
+                else:
+                    print(f"[WebScraper]   PDFs disabled, skipping")
+                return None
+
+            # Handle HTML
+            if "text/html" in content_type or not content_type:
+                print(f"[WebScraper]   Parsing HTML")
+                result = self._parse_html(url, response.text, depth)
+                if result:
+                    print(f"[WebScraper]   ✓ Successfully parsed HTML (content length: {len(result.content)})")
+                else:
+                    print(f"[WebScraper]   ✗ HTML parsing returned None")
+                return result
+
+            print(f"[WebScraper]   Unsupported content type: {content_type}")
+            return None
+
+        except Exception as e:
+            print(f"[WebScraper] Error crawling {url}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _parse_html(self, url: str, html_content: str, depth: int) -> Optional[Document]:
+        """Parse HTML page and extract text content"""
+        try:
+            print(f"[WebScraper]     Parsing HTML (length: {len(html_content)})")
+            soup = BeautifulSoup(html_content, "html.parser")
+
+            # Extract title first (before removing anything)
+            title = soup.find("title")
+            title_text = title.get_text().strip() if title else urlparse(url).path
+            print(f"[WebScraper]     Title: {title_text}")
+
+            # Only remove script and style elements (keep nav, header, footer - they often have content)
+            for script in soup(["script", "style"]):
+                script.decompose()
+
+            print(f"[WebScraper]     After removing script/style, soup length: {len(str(soup))}")
+
+            # Extract main content
+            # Try to find main content area, but be less strict
+            main_content = (
+                soup.find("main") or
+                soup.find("article") or
+                soup.find("div", id=re.compile(r"content|main", re.I)) or
+                soup.find("div", class_=re.compile(r"content|main", re.I)) or
+                soup.find("body") or
+                soup
+            )
+
+            print(f"[WebScraper]     Found content container: {main_content.name if hasattr(main_content, 'name') else 'unknown'}")
+
+            # Extract text with more lenient approach
+            text = main_content.get_text(separator="\n", strip=True)
+            print(f"[WebScraper]     Raw text length: {len(text)}")
+
+            # Clean up excessive whitespace
+            lines = [line.strip() for line in text.split("\n") if line.strip()]
+            content = "\n\n".join(lines)
+
+            print(f"[WebScraper]     Cleaned content length: {len(content)}")
+            print(f"[WebScraper]     Number of lines: {len(lines)}")
+
+            if len(content) < 100:  # Skip pages with very little content
+                print(f"[WebScraper]     Content too short (<100 chars), skipping")
+                print(f"[WebScraper]     Content preview: {content[:200]}")
+                return None
+
+            # Extract metadata
+            description = soup.find("meta", attrs={"name": "description"})
+            description_text = description.get("content", "").strip() if description else ""
+
+            keywords = soup.find("meta", attrs={"name": "keywords"})
+            keywords_text = keywords.get("content", "").strip() if keywords else ""
+
+            return Document(
+                doc_id=f"webscraper_{self._url_to_id(url)}",
+                source="webscraper",
+                content=content,
+                title=title_text,
+                metadata={
+                    "url": url,
+                    "depth": depth,
+                    "description": description_text,
+                    "keywords": keywords_text,
+                    "word_count": len(content.split()),
+                    "html_content": html_content  # Store for link extraction
+                },
+                timestamp=datetime.now(),
+                url=url,
+                doc_type="webpage"
+            )
+
+        except Exception as e:
+            print(f"[WebScraper] Error parsing HTML from {url}: {e}")
+            return None
+
+    def _parse_pdf(self, url: str, pdf_content: bytes) -> Optional[Document]:
+        """Parse PDF content"""
+        try:
+            import PyPDF2
+            import io
+
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_content))
+            text_parts = []
+
+            for page_num, page in enumerate(pdf_reader.pages, 1):
+                text = page.extract_text()
+                if text.strip():
+                    text_parts.append(f"--- Page {page_num} ---\n{text}")
+
+            content = "\n\n".join(text_parts)
+
+            if len(content) < 100:
+                return None
+
+            # Extract title from URL or PDF metadata
+            title = urlparse(url).path.split("/")[-1]
+            if pdf_reader.metadata and pdf_reader.metadata.title:
+                title = pdf_reader.metadata.title
+
+            return Document(
+                doc_id=f"webscraper_{self._url_to_id(url)}",
+                source="webscraper",
+                content=content,
+                title=title,
+                metadata={
+                    "url": url,
+                    "content_type": "pdf",
+                    "page_count": len(pdf_reader.pages),
+                    "word_count": len(content.split())
+                },
+                timestamp=datetime.now(),
+                url=url,
+                doc_type="pdf"
+            )
+
+        except Exception as e:
+            print(f"[WebScraper] Error parsing PDF from {url}: {e}")
+            return None
+
+    def _extract_links(self, html_content: str, base_url: str) -> List[str]:
+        """Extract and filter links from HTML content"""
+        try:
+            soup = BeautifulSoup(html_content, "html.parser")
+            links = []
+
+            for anchor in soup.find_all("a", href=True):
+                href = anchor["href"].strip()
+
+                # Skip empty, anchor, mailto, tel links
+                if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+                    continue
+
+                # Convert to absolute URL
+                absolute_url = urljoin(base_url, href)
+
+                # Remove fragment
+                absolute_url = absolute_url.split("#")[0]
+
+                # Check if same domain
+                parsed = urlparse(absolute_url)
+                url_domain = f"{parsed.scheme}://{parsed.netloc}"
+
+                if url_domain == self.base_domain:
+                    links.append(absolute_url)
+
+            return list(set(links))  # Deduplicate
+
+        except Exception as e:
+            print(f"[WebScraper] Error extracting links: {e}")
+            return []
+
+    def _url_to_id(self, url: str) -> str:
+        """Convert URL to a unique ID"""
+        import hashlib
+        return hashlib.md5(url.encode()).hexdigest()
+
+    async def get_document(self, doc_id: str) -> Optional[Document]:
+        """Get a specific document by ID"""
+        # Not implemented for web scraper
+        return None
