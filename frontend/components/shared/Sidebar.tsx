@@ -62,7 +62,7 @@ export default function Sidebar({
   return (
     <div
       className="h-full flex flex-col py-6"
-      style={{ width: '280px', backgroundColor: '#FFFFFF' }}
+      style={{ width: '280px', backgroundColor: '#FFE2BF' }}
     >
       <div className="px-6">
         {/* Logo */}
