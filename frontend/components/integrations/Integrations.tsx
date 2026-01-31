@@ -2747,6 +2747,7 @@ export default function Integrations() {
 
   // Poll for sync status
   const pollSyncStatus = async (integrationId: string) => {
+    console.log('[DEBUG] pollSyncStatus called for:', integrationId, 'interval:', syncPollingInterval)
     const token = getAuthToken()
     if (!token) return
 
@@ -2833,7 +2834,9 @@ export default function Integrations() {
       if (response.data.success) {
         // Start polling for status
         const interval = setInterval(() => pollSyncStatus(integrationId), 2000)
+        console.log('[DEBUG] Created new polling interval:', interval)
         setSyncPollingInterval(interval)
+        console.log('[DEBUG] Polling interval stored in state')
       } else {
         saveSyncState(null) // Clear saved state on error
         setSyncProgress(prev => prev ? {
@@ -2855,11 +2858,16 @@ export default function Integrations() {
 
   // Minimize sync progress modal - ALWAYS stop polling to prevent infinite loop
   const minimizeSyncProgress = () => {
+    console.log('[DEBUG] minimizeSyncProgress called, syncPollingInterval:', syncPollingInterval)
     setShowSyncProgress(false)
     // CRITICAL FIX: Stop polling when minimizing to prevent infinite requests
     if (syncPollingInterval) {
+      console.log('[DEBUG] Clearing interval:', syncPollingInterval)
       clearInterval(syncPollingInterval)
       setSyncPollingInterval(null)
+      console.log('[DEBUG] Interval cleared and set to null')
+    } else {
+      console.log('[DEBUG] WARNING: syncPollingInterval is null/undefined, nothing to clear!')
     }
     // Backend sync continues in background, but we stop checking status
   }
