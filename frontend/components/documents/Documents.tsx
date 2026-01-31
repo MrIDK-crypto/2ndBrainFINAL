@@ -272,14 +272,14 @@ export default function Documents() {
       style={{
         backgroundColor: bgColor,
         borderRadius: '16px',
-        padding: isLarge ? '32px' : '24px',
+        padding: isLarge ? '32px' : '20px',
         border: active ? '2px solid #374151' : '2px solid rgba(55, 65, 81, 0.2)',
         cursor: 'pointer',
         transition: 'all 0.2s',
         textAlign: 'left',
         width: '100%',
         height: '100%',
-        minHeight: isLarge ? '200px' : '140px',
+        minHeight: isLarge ? '160px' : '112px',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
@@ -532,7 +532,7 @@ export default function Documents() {
         <div className="px-8 pb-6" style={{ backgroundColor: '#FFE2BF' }}>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(200px, 1fr) repeat(4, 1fr)',
+            gridTemplateColumns: 'minmax(200px, 1fr) repeat(3, 1fr)',
             gridTemplateRows: 'auto auto',
             gap: '16px'
           }}>
@@ -557,7 +557,7 @@ export default function Documents() {
               />
             </div>
 
-            {/* Row 1 - Right side */}
+            {/* Row 1 - Right side (3 columns) */}
             {/* Documents */}
             <div style={{ gridColumn: '2 / 3', gridRow: '1 / 2' }}>
               <CategoryCard
@@ -615,8 +615,9 @@ export default function Documents() {
               />
             </div>
 
+            {/* Row 2 - Right side (3 columns, equal sizes) */}
             {/* Other Items */}
-            <div style={{ gridColumn: '5 / 6', gridRow: '1 / 2' }}>
+            <div style={{ gridColumn: '2 / 3', gridRow: '2 / 3' }}>
               <CategoryCard
                 title="Other Items"
                 count={counts.other}
@@ -635,9 +636,8 @@ export default function Documents() {
               />
             </div>
 
-            {/* Row 2 - Right side */}
-            {/* Web Scraper - spans 2 columns */}
-            <div style={{ gridColumn: '2 / 4', gridRow: '2 / 3' }}>
+            {/* Web Scraper */}
+            <div style={{ gridColumn: '3 / 4', gridRow: '2 / 3' }}>
               <CategoryCard
                 title="Web Scraper"
                 count={counts.webscraper}
@@ -655,8 +655,8 @@ export default function Documents() {
               />
             </div>
 
-            {/* Meetings - spans 2 columns */}
-            <div style={{ gridColumn: '4 / 6', gridRow: '2 / 3' }}>
+            {/* Meetings */}
+            <div style={{ gridColumn: '4 / 5', gridRow: '2 / 3' }}>
               <CategoryCard
                 title="Meetings"
                 count={counts.meetings}
