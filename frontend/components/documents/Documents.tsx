@@ -158,19 +158,19 @@ export default function Documents() {
           // Try different sources for summary
           if (doc.summary && doc.summary.trim()) {
             // Take first 5 words from existing summary
-            const words = doc.summary.split(' ').filter(w => w.length > 0).slice(0, 5).join(' ')
+            const words = doc.summary.split(' ').filter((w: string) => w.length > 0).slice(0, 5).join(' ')
             quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words
           } else if (doc.structured_summary?.summary) {
-            const words = doc.structured_summary.summary.split(' ').filter(w => w.length > 0).slice(0, 5).join(' ')
+            const words = doc.structured_summary.summary.split(' ').filter((w: string) => w.length > 0).slice(0, 5).join(' ')
             quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words
           } else if (doc.content && doc.content.trim().length > 0) {
             // Fallback 1: Use first sentence of content
             const firstSentence = doc.content.trim().split(/[.!?]\s/)[0]
-            const words = firstSentence.split(' ').filter(w => w.length > 0).slice(0, 6).join(' ')
+            const words = firstSentence.split(' ').filter((w: string) => w.length > 0).slice(0, 6).join(' ')
             quickSummary = words.length > 50 ? words.substring(0, 50) + '...' : words + '...'
           } else if (doc.metadata?.description) {
             // Fallback 2: Use metadata description
-            const words = doc.metadata.description.split(' ').filter(w => w.length > 0).slice(0, 5).join(' ')
+            const words = doc.metadata.description.split(' ').filter((w: string) => w.length > 0).slice(0, 5).join(' ')
             quickSummary = words.length > 40 ? words.substring(0, 40) + '...' : words
           } else {
             // Final fallback: extract from title or use type
