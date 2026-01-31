@@ -57,6 +57,7 @@ export default function Documents() {
   const [loadingDocument, setLoadingDocument] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [displayLimit, setDisplayLimit] = useState(50)
 
   const authHeaders = useAuthHeaders()
   const { token } = useAuth()
@@ -416,22 +417,23 @@ export default function Documents() {
           backgroundColor: '#FFFFFF',
           border: '1.5px solid #D1D5DB',
           borderRadius: '8px',
-          marginBottom: '8px',
-          display: 'flex',
+          marginBottom: '4px',
+          display: 'grid',
+          gridTemplateColumns: '2fr 1.5fr 120px 140px 100px 40px',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px'
+          gap: '16px'
         }}
       >
+        {/* Title */}
         <button
           onClick={() => viewDocument(doc.id)}
           style={{
-            flex: 1,
             textAlign: 'left',
             background: 'none',
             border: 'none',
             cursor: 'pointer',
-            padding: 0
+            padding: 0,
+            overflow: 'hidden'
           }}
         >
           <div style={{
@@ -439,42 +441,60 @@ export default function Documents() {
             fontSize: '15px',
             fontWeight: 500,
             color: '#111827',
-            marginBottom: '4px',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis'
           }}>
             {doc.name}
           </div>
-          {doc.quickSummary && (
-            <div style={{
-              fontFamily: notionFont,
-              fontSize: '13px',
-              color: '#9CA3AF',
-              fontStyle: 'italic',
-              marginBottom: '4px',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis'
-            }}>
-              {doc.quickSummary}
-            </div>
-          )}
-          <div style={{
-            fontFamily: notionFont,
-            fontSize: '13px',
-            color: '#6B7280',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px'
-          }}>
-            <span>{doc.type}</span>
-            <span>•</span>
-            <span>{doc.created}</span>
-            <span>•</span>
-            <span>{doc.category}</span>
-          </div>
         </button>
+
+        {/* Summary */}
+        <div style={{
+          fontFamily: notionFont,
+          fontSize: '13px',
+          color: '#9CA3AF',
+          fontStyle: 'italic',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}>
+          {doc.quickSummary || 'No preview'}
+        </div>
+
+        {/* Type */}
+        <div style={{
+          fontFamily: notionFont,
+          fontSize: '13px',
+          color: '#6B7280',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}>
+          {doc.type}
+        </div>
+
+        {/* Date Created */}
+        <div style={{
+          fontFamily: notionFont,
+          fontSize: '13px',
+          color: '#6B7280',
+          whiteSpace: 'nowrap'
+        }}>
+          {doc.created}
+        </div>
+
+        {/* Category */}
+        <div style={{
+          fontFamily: notionFont,
+          fontSize: '13px',
+          color: '#6B7280',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}>
+          {doc.category}
+        </div>
 
         {/* Three-dot menu */}
         <div style={{ position: 'relative' }}>
@@ -1106,23 +1126,121 @@ export default function Documents() {
                   ({filteredDocuments.length})
                 </span>
               </h2>
+
+              {/* Column Headers */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '2fr 1.5fr 120px 140px 100px 40px',
+                gap: '16px',
+                padding: '12px 20px',
+                backgroundColor: '#F9FAFB',
+                borderRadius: '8px',
+                marginBottom: '8px'
+              }}>
+                <div style={{
+                  fontFamily: notionFont,
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#6B7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Title
+                </div>
+                <div style={{
+                  fontFamily: notionFont,
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#6B7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Summary
+                </div>
+                <div style={{
+                  fontFamily: notionFont,
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#6B7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Type
+                </div>
+                <div style={{
+                  fontFamily: notionFont,
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#6B7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Date Created
+                </div>
+                <div style={{
+                  fontFamily: notionFont,
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#6B7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Category
+                </div>
+                <div></div>
+              </div>
+
               <div>
-                {filteredDocuments.slice(0, 50).map(doc => (
+                {filteredDocuments.slice(0, displayLimit).map(doc => (
                   <DocumentListItem key={doc.id} doc={doc} />
                 ))}
               </div>
-              {filteredDocuments.length > 50 && (
+              {filteredDocuments.length > displayLimit && (
                 <div style={{
                   marginTop: '24px',
-                  padding: '16px',
-                  backgroundColor: '#FFFFFF',
-                  borderRadius: '8px',
-                  textAlign: 'center',
-                  fontFamily: notionFont,
-                  fontSize: '14px',
-                  color: '#6B7280'
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '12px'
                 }}>
-                  Showing 50 of {filteredDocuments.length} documents
+                  <div style={{
+                    fontFamily: notionFont,
+                    fontSize: '14px',
+                    color: '#6B7280'
+                  }}>
+                    Showing {displayLimit} of {filteredDocuments.length} documents
+                  </div>
+                  <button
+                    onClick={() => setDisplayLimit(prev => prev + 50)}
+                    style={{
+                      padding: '12px 24px',
+                      borderRadius: '8px',
+                      backgroundColor: '#FFFFFF',
+                      color: '#374151',
+                      border: '1.5px solid #D1D5DB',
+                      cursor: 'pointer',
+                      fontFamily: notionFont,
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#F9FAFB'
+                      e.currentTarget.style.borderColor = '#9CA3AF'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = '#FFFFFF'
+                      e.currentTarget.style.borderColor = '#D1D5DB'
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                    Show More
+                  </button>
                 </div>
               )}
             </>
