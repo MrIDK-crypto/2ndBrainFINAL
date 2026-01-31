@@ -1289,6 +1289,10 @@ def get_tenant_debug_info():
             "all_tenants_with_documents": [
                 {"tenant_id": "xxx", "count": 80},
                 ...
+            ],
+            "all_users": [
+                {"email": "demo@test.com", "tenant_id": "xxx", "has_documents": true},
+                ...
             ]
         }
     }
@@ -1297,6 +1301,7 @@ def get_tenant_debug_info():
         db = get_db()
         try:
             from sqlalchemy import func
+            from database.models import User, Tenant
 
             # Current user's document count
             my_doc_count = db.query(Document).filter(
@@ -1312,6 +1317,25 @@ def get_tenant_debug_info():
                 Document.is_deleted == False
             ).group_by(Document.tenant_id).all()
 
+            # Get all users with their tenant info
+            users_data = []
+            users = db.query(User).all()
+            for user in users:
+                tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+                doc_count = db.query(Document).filter(
+                    Document.tenant_id == user.tenant_id,
+                    Document.is_deleted == False
+                ).count()
+
+                users_data.append({
+                    "email": user.email,
+                    "full_name": user.full_name,
+                    "tenant_id": user.tenant_id[:16] + "..." if len(user.tenant_id) > 16 else user.tenant_id,
+                    "tenant_name": tenant.name if tenant else "Unknown",
+                    "document_count": doc_count,
+                    "is_current_user": user.id == g.user_id
+                })
+
             return jsonify({
                 "success": True,
                 "debug": {
@@ -1325,7 +1349,9 @@ def get_tenant_debug_info():
                             "count": count
                         }
                         for tenant_id, count in all_tenants
-                    ]
+                    ],
+                    "all_users": users_data,
+                    "suggestion": "Login with an account that has documents, or use /api/documents/migrate to move documents to your current account"
                 }
             })
 
@@ -1333,6 +1359,101 @@ def get_tenant_debug_info():
             db.close()
 
     except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@document_bp.route('/migrate', methods=['POST'])
+@require_auth
+def migrate_documents_to_current_tenant():
+    """
+    Migrate all documents from another tenant to the current user's tenant.
+    Useful when documents were created under wrong account.
+
+    Request body:
+    {
+        "from_email": "other-user@example.com"  // Email of user whose documents to migrate
+    }
+
+    Response:
+    {
+        "success": true,
+        "migrated_count": 80,
+        "from_tenant": "xxx",
+        "to_tenant": "yyy"
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data or 'from_email' not in data:
+            return jsonify({
+                "success": False,
+                "error": "from_email is required"
+            }), 400
+
+        from_email = data['from_email'].lower().strip()
+
+        db = get_db()
+        try:
+            from database.models import User
+
+            # Find the source user
+            source_user = db.query(User).filter(User.email == from_email).first()
+            if not source_user:
+                return jsonify({
+                    "success": False,
+                    "error": f"User not found: {from_email}"
+                }), 404
+
+            source_tenant_id = source_user.tenant_id
+
+            # Don't migrate if it's the same tenant
+            if source_tenant_id == g.tenant_id:
+                return jsonify({
+                    "success": False,
+                    "error": "Source and destination tenants are the same"
+                }), 400
+
+            # Count documents to migrate
+            docs_to_migrate = db.query(Document).filter(
+                Document.tenant_id == source_tenant_id,
+                Document.is_deleted == False
+            ).all()
+
+            if not docs_to_migrate:
+                return jsonify({
+                    "success": True,
+                    "migrated_count": 0,
+                    "message": "No documents to migrate"
+                })
+
+            # Migrate documents
+            migrated_count = 0
+            for doc in docs_to_migrate:
+                doc.tenant_id = g.tenant_id
+                migrated_count += 1
+
+            db.commit()
+
+            print(f"[Migrate] Migrated {migrated_count} documents from {from_email} ({source_tenant_id[:8]}...) to {g.email} ({g.tenant_id[:8]}...)")
+
+            return jsonify({
+                "success": True,
+                "migrated_count": migrated_count,
+                "from_email": from_email,
+                "from_tenant": source_tenant_id[:16] + "...",
+                "to_tenant": g.tenant_id[:16] + "...",
+                "to_email": g.email
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "success": False,
             "error": str(e)
