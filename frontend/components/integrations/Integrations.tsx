@@ -2534,8 +2534,8 @@ export default function Integrations() {
                 startTime: savedState.startTime
               })
               setShowSyncProgress(true)
-              // Start polling
-              const interval = setInterval(() => pollSyncStatus(savedState.integration), 1000)
+              // Start polling (reduced from 1000ms to 2000ms to reduce server load)
+              const interval = setInterval(() => pollSyncStatus(savedState.integration), 2000)
               setSyncPollingInterval(interval)
             } else if (status.status === 'completed') {
               // Sync completed while user was away - keep the completed state
@@ -2579,6 +2579,13 @@ export default function Integrations() {
           // Error checking status - clear saved state
           saveSyncState(null)
         })
+      }
+    }
+
+    // Cleanup function to stop polling when component unmounts
+    return () => {
+      if (syncPollingInterval) {
+        clearInterval(syncPollingInterval)
       }
     }
   }, [])
