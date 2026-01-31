@@ -8,8 +8,8 @@ from typing import Dict, List, Optional
 from datetime import datetime, timezone
 from openai import AzureOpenAI
 
-from config.config import (
-    AZURE_OPENAI_KEY, AZURE_OPENAI_ENDPOINT,
+from azure_openai_config import (
+    AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT,
     AZURE_CHAT_DEPLOYMENT, AZURE_API_VERSION
 )
 
@@ -27,7 +27,7 @@ class CodeAnalysisService:
     def __init__(self):
         """Initialize Azure OpenAI client"""
         self.client = AzureOpenAI(
-            api_key=AZURE_OPENAI_KEY,
+            api_key=AZURE_OPENAI_API_KEY,
             api_version=AZURE_API_VERSION,
             azure_endpoint=AZURE_OPENAI_ENDPOINT
         )
