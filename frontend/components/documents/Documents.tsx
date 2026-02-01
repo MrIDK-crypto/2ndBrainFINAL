@@ -956,23 +956,6 @@ export default function Documents() {
               onClick={() => setActiveCategory('Documents')}
             />
 
-            {/* Personal Items */}
-            <CategoryCard
-              title="Personal Items"
-              count={counts.personal}
-              icon={
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M20 21V19C20 17.9391 19.5786 16.9217 18.8284 16.1716C18.0783 15.4214 17.0609 15 16 15H8C6.93913 15 5.92172 15.4214 5.17157 16.1716C4.42143 16.9217 4 17.9391 4 19V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <circle cx="12" cy="7" r="4" stroke="currentColor" strokeWidth="2"/>
-                </svg>
-              }
-              bgColor="#F5E6D3"
-              textColor="#78350F"
-              isLarge={false}
-              active={activeCategory === 'Personal Items'}
-              onClick={() => setActiveCategory('Personal Items')}
-            />
-
             {/* Code */}
             <CategoryCard
               title="Code"
@@ -990,22 +973,22 @@ export default function Documents() {
               onClick={() => setActiveCategory('Code')}
             />
 
-            {/* Other Items */}
+            {/* Meetings */}
             <CategoryCard
-              title="Other Items"
-              count={counts.other}
+              title="Meetings"
+              count={counts.meetings}
               icon={
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                  <circle cx="12" cy="6" r="1.5" fill="currentColor"/>
-                  <circle cx="12" cy="18" r="1.5" fill="currentColor"/>
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               }
-              bgColor="#E5E7EB"
-              textColor="#374151"
+              bgColor="#E0E7FF"
+              textColor="#3730A3"
               isLarge={false}
-              active={activeCategory === 'Other Items'}
-              onClick={() => setActiveCategory('Other Items')}
+              active={activeCategory === 'Meetings'}
+              onClick={() => setActiveCategory('Meetings')}
             />
 
             {/* Web Scraper */}
@@ -1025,22 +1008,39 @@ export default function Documents() {
               onClick={() => setActiveCategory('Web Scraper')}
             />
 
-            {/* Meetings */}
+            {/* Personal Items */}
             <CategoryCard
-              title="Meetings"
-              count={counts.meetings}
+              title="Personal Items"
+              count={counts.personal}
               icon={
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2"/>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M20 21V19C20 17.9391 19.5786 16.9217 18.8284 16.1716C18.0783 15.4214 17.0609 15 16 15H8C6.93913 15 5.92172 15.4214 5.17157 16.1716C4.42143 16.9217 4 17.9391 4 19V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <circle cx="12" cy="7" r="4" stroke="currentColor" strokeWidth="2"/>
                 </svg>
               }
-              bgColor="#E0E7FF"
-              textColor="#3730A3"
+              bgColor="#F5E6D3"
+              textColor="#78350F"
               isLarge={false}
-              active={activeCategory === 'Meetings'}
-              onClick={() => setActiveCategory('Meetings')}
+              active={activeCategory === 'Personal Items'}
+              onClick={() => setActiveCategory('Personal Items')}
+            />
+
+            {/* Other Items */}
+            <CategoryCard
+              title="Other Items"
+              count={counts.other}
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                  <circle cx="12" cy="6" r="1.5" fill="currentColor"/>
+                  <circle cx="12" cy="18" r="1.5" fill="currentColor"/>
+                </svg>
+              }
+              bgColor="#E5E7EB"
+              textColor="#374151"
+              isLarge={false}
+              active={activeCategory === 'Other Items'}
+              onClick={() => setActiveCategory('Other Items')}
             />
           </div>
         </div>
