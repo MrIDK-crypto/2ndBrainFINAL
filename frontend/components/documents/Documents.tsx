@@ -380,18 +380,19 @@ export default function Documents() {
       onClick={onClick}
       style={{
         backgroundColor: bgColor,
-        borderRadius: '16px',
-        padding: isLarge ? '32px' : '20px',
+        borderRadius: '12px',
+        padding: '12px 16px',
         border: active ? '2px solid #374151' : '2px solid rgba(55, 65, 81, 0.2)',
         cursor: 'pointer',
         transition: 'all 0.2s',
         textAlign: 'left',
         width: '100%',
-        height: '100%',
-        minHeight: isLarge ? '160px' : '112px',
+        height: '60px',
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
+        gap: '12px',
         boxShadow: active ? '0 4px 12px rgba(0,0,0,0.1)' : 'none'
       }}
       onMouseEnter={(e) => {
@@ -406,26 +407,30 @@ export default function Documents() {
       }}
     >
       <div style={{
-        fontSize: isLarge ? '32px' : '24px',
+        fontSize: '20px',
         color: textColor,
-        opacity: 0.9
+        opacity: 0.9,
+        flexShrink: 0
       }}>
         {icon}
       </div>
-      <div>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontFamily: notionFont,
-          fontSize: isLarge ? '16px' : '14px',
+          fontSize: '11px',
           fontWeight: 500,
           color: textColor,
           opacity: 0.7,
-          marginBottom: '4px'
+          marginBottom: '2px',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
         }}>
           {title}
         </div>
         <div style={{
           fontFamily: notionFont,
-          fontSize: isLarge ? '64px' : '48px',
+          fontSize: '24px',
           fontWeight: 700,
           color: textColor,
           lineHeight: '1',
@@ -912,148 +917,131 @@ export default function Documents() {
         <div className="px-8 pb-6" style={{ backgroundColor: '#FFE2BF' }}>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(200px, 1fr) repeat(3, 1fr)',
-            gridTemplateRows: 'auto auto',
-            gap: '16px'
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: '12px'
           }}>
-            {/* All Items - Large, spans 2 rows */}
-            <div style={{ gridColumn: '1 / 2', gridRow: '1 / 3' }}>
-              <CategoryCard
-                title="All Items"
-                count={counts.all}
-                icon={
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-                    <rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.9"/>
-                    <rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.9"/>
-                    <rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.9"/>
-                    <rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.9"/>
-                  </svg>
-                }
-                bgColor="#A67C52"
-                textColor="#FFFFFF"
-                isLarge={true}
-                active={activeCategory === 'All Items'}
-                onClick={() => setActiveCategory('All Items')}
-              />
-            </div>
+            {/* All Items */}
+            <CategoryCard
+              title="All Items"
+              count={counts.all}
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.9"/>
+                  <rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.9"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.9"/>
+                  <rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.9"/>
+                </svg>
+              }
+              bgColor="#A67C52"
+              textColor="#FFFFFF"
+              isLarge={false}
+              active={activeCategory === 'All Items'}
+              onClick={() => setActiveCategory('All Items')}
+            />
 
-            {/* Row 1 - Right side (3 columns) */}
             {/* Documents */}
-            <div style={{ gridColumn: '2 / 3', gridRow: '1 / 2' }}>
-              <CategoryCard
-                title="Documents"
-                count={counts.documents}
-                icon={
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                    <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                }
-                bgColor="#D1F5E4"
-                textColor="#064E3B"
-                isLarge={false}
-                active={activeCategory === 'Documents'}
-                onClick={() => setActiveCategory('Documents')}
-              />
-            </div>
+            <CategoryCard
+              title="Documents"
+              count={counts.documents}
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              }
+              bgColor="#D1F5E4"
+              textColor="#064E3B"
+              isLarge={false}
+              active={activeCategory === 'Documents'}
+              onClick={() => setActiveCategory('Documents')}
+            />
 
             {/* Personal Items */}
-            <div style={{ gridColumn: '3 / 4', gridRow: '1 / 2' }}>
-              <CategoryCard
-                title="Personal Items"
-                count={counts.personal}
-                icon={
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                    <path d="M20 21V19C20 17.9391 19.5786 16.9217 18.8284 16.1716C18.0783 15.4214 17.0609 15 16 15H8C6.93913 15 5.92172 15.4214 5.17157 16.1716C4.42143 16.9217 4 17.9391 4 19V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <circle cx="12" cy="7" r="4" stroke="currentColor" strokeWidth="2"/>
-                  </svg>
-                }
-                bgColor="#F5E6D3"
-                textColor="#78350F"
-                isLarge={false}
-                active={activeCategory === 'Personal Items'}
-                onClick={() => setActiveCategory('Personal Items')}
-              />
-            </div>
+            <CategoryCard
+              title="Personal Items"
+              count={counts.personal}
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M20 21V19C20 17.9391 19.5786 16.9217 18.8284 16.1716C18.0783 15.4214 17.0609 15 16 15H8C6.93913 15 5.92172 15.4214 5.17157 16.1716C4.42143 16.9217 4 17.9391 4 19V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <circle cx="12" cy="7" r="4" stroke="currentColor" strokeWidth="2"/>
+                </svg>
+              }
+              bgColor="#F5E6D3"
+              textColor="#78350F"
+              isLarge={false}
+              active={activeCategory === 'Personal Items'}
+              onClick={() => setActiveCategory('Personal Items')}
+            />
 
             {/* Code */}
-            <div style={{ gridColumn: '4 / 5', gridRow: '1 / 2' }}>
-              <CategoryCard
-                title="Code"
-                count={counts.code}
-                icon={
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                    <path d="M16 18L22 12L16 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M8 6L2 12L8 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                }
-                bgColor="#DBEAFE"
-                textColor="#1E3A8A"
-                isLarge={false}
-                active={activeCategory === 'Code'}
-                onClick={() => setActiveCategory('Code')}
-              />
-            </div>
+            <CategoryCard
+              title="Code"
+              count={counts.code}
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M16 18L22 12L16 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M8 6L2 12L8 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              }
+              bgColor="#DBEAFE"
+              textColor="#1E3A8A"
+              isLarge={false}
+              active={activeCategory === 'Code'}
+              onClick={() => setActiveCategory('Code')}
+            />
 
-            {/* Row 2 - Right side (3 columns, equal sizes) */}
             {/* Other Items */}
-            <div style={{ gridColumn: '2 / 3', gridRow: '2 / 3' }}>
-              <CategoryCard
-                title="Other Items"
-                count={counts.other}
-                icon={
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                    <circle cx="12" cy="6" r="1.5" fill="currentColor"/>
-                    <circle cx="12" cy="18" r="1.5" fill="currentColor"/>
-                  </svg>
-                }
-                bgColor="#E5E7EB"
-                textColor="#374151"
-                isLarge={false}
-                active={activeCategory === 'Other Items'}
-                onClick={() => setActiveCategory('Other Items')}
-              />
-            </div>
+            <CategoryCard
+              title="Other Items"
+              count={counts.other}
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                  <circle cx="12" cy="6" r="1.5" fill="currentColor"/>
+                  <circle cx="12" cy="18" r="1.5" fill="currentColor"/>
+                </svg>
+              }
+              bgColor="#E5E7EB"
+              textColor="#374151"
+              isLarge={false}
+              active={activeCategory === 'Other Items'}
+              onClick={() => setActiveCategory('Other Items')}
+            />
 
             {/* Web Scraper */}
-            <div style={{ gridColumn: '3 / 4', gridRow: '2 / 3' }}>
-              <CategoryCard
-                title="Web Scraper"
-                count={counts.webscraper}
-                icon={
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
-                    <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" strokeWidth="2"/>
-                  </svg>
-                }
-                bgColor="#FEF3C7"
-                textColor="#92400E"
-                isLarge={false}
-                active={activeCategory === 'Web Scraper'}
-                onClick={() => setActiveCategory('Web Scraper')}
-              />
-            </div>
+            <CategoryCard
+              title="Web Scraper"
+              count={counts.webscraper}
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                  <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" strokeWidth="2"/>
+                </svg>
+              }
+              bgColor="#FEF3C7"
+              textColor="#92400E"
+              isLarge={false}
+              active={activeCategory === 'Web Scraper'}
+              onClick={() => setActiveCategory('Web Scraper')}
+            />
 
             {/* Meetings */}
-            <div style={{ gridColumn: '4 / 5', gridRow: '2 / 3' }}>
-              <CategoryCard
-                title="Meetings"
-                count={counts.meetings}
-                icon={
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2"/>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                }
-                bgColor="#E0E7FF"
-                textColor="#3730A3"
-                isLarge={false}
-                active={activeCategory === 'Meetings'}
-                onClick={() => setActiveCategory('Meetings')}
-              />
-            </div>
+            <CategoryCard
+              title="Meetings"
+              count={counts.meetings}
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              }
+              bgColor="#E0E7FF"
+              textColor="#3730A3"
+              isLarge={false}
+              active={activeCategory === 'Meetings'}
+              onClick={() => setActiveCategory('Meetings')}
+            />
           </div>
         </div>
 
