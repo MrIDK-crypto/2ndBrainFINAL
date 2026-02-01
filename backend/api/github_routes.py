@@ -289,9 +289,9 @@ def sync_repository():
     """
     Sync and analyze a GitHub repository.
 
-    Request body:
+    Request body (all optional):
     {
-        "repository": "user/repo",
+        "repository": "user/repo",  # optional - if not provided, syncs most recent repo
         "max_files": 100,  # optional
         "max_files_to_analyze": 30  # optional
     }
@@ -304,16 +304,8 @@ def sync_repository():
     }
     """
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         repository = data.get('repository')  # Format: "owner/repo"
-
-        if not repository or '/' not in repository:
-            return jsonify({
-                "success": False,
-                "error": "Invalid repository format. Use 'owner/repo'"
-            }), 400
-
-        owner, repo = repository.split('/', 1)
         max_files = data.get('max_files', 100)
         max_files_to_analyze = data.get('max_files_to_analyze', 30)
 
@@ -333,10 +325,33 @@ def sync_repository():
                 }), 404
 
             access_token = connector.credentials.get('access_token')
+            github = GitHubConnector(access_token=access_token)
+
+            # If no repository specified, get the most recently updated repo
+            if not repository:
+                print("[GitHub] No repository specified, fetching most recent repo")
+                repos = github.get_repositories()
+                if not repos:
+                    return jsonify({
+                        "success": False,
+                        "error": "No repositories found. Please create a repository on GitHub first."
+                    }), 404
+
+                # Sort by updated_at and get most recent
+                repos.sort(key=lambda r: r.get('updated_at', ''), reverse=True)
+                repository = repos[0]['full_name']
+                print(f"[GitHub] Auto-selected most recent repository: {repository}")
+
+            if not repository or '/' not in repository:
+                return jsonify({
+                    "success": False,
+                    "error": "Invalid repository format. Use 'owner/repo'"
+                }), 400
+
+            owner, repo = repository.split('/', 1)
 
             # Fetch repository code
             print(f"[GitHub] Fetching code from {repository}")
-            github = GitHubConnector(access_token=access_token)
             code_files = github.fetch_repository_code(
                 owner=owner,
                 repo=repo,
