@@ -293,7 +293,7 @@ def sync_repository():
     {
         "repository": "user/repo",  # optional - if not provided, syncs most recent repo
         "max_files": 100,  # optional
-        "max_files_to_analyze": 30  # optional
+        "max_files_to_analyze": 5  # optional (default 5 to prevent timeouts)
     }
 
     Response:
@@ -307,7 +307,7 @@ def sync_repository():
         data = request.get_json() or {}
         repository = data.get('repository')  # Format: "owner/repo"
         max_files = data.get('max_files', 100)
-        max_files_to_analyze = data.get('max_files_to_analyze', 30)
+        max_files_to_analyze = data.get('max_files_to_analyze', 5)  # Reduced from 30 to prevent timeouts
 
         db = get_db()
         try:
